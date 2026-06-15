@@ -1666,13 +1666,76 @@ function showBackupWarnings(warnings) {
   els.backupWarnings.style.display = "block";
 }
 
+function generateUniqueId(usedSet) {
+  let newId;
+  do {
+    newId = crypto.randomUUID();
+  } while (usedSet.has(newId));
+  usedSet.add(newId);
+  return newId;
+}
+
+function resolveImportedId(oldId, usedSet, firstOccurrenceMap) {
+  if (!usedSet.has(oldId)) {
+    usedSet.add(oldId);
+    if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
+      firstOccurrenceMap[oldId] = oldId;
+    }
+    return oldId;
+  }
+
+  const newId = generateUniqueId(usedSet);
+  if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
+    firstOccurrenceMap[oldId] = newId;
+  }
+  return newId;
+}
+
+function normalizeImportedBackupData(backupData, usedIds = {}) {
+  const usedReelIds = usedIds.reels || new Set();
+  const usedSegmentIds = usedIds.segments || new Set();
+  const usedTemplateIds = usedIds.templates || new Set();
+  const usedChecklistIds = usedIds.checklist || new Set();
+  const segmentIdFirstOccurrenceMap = {};
+
+  const normalizedReels = backupData.reels.map((reel) => {
+    const reelCopy = structuredClone(reel);
+    reelCopy.id = resolveImportedId(reelCopy.id, usedReelIds);
+
+    reelCopy.segments = reelCopy.segments.map((seg) => {
+      const newSegId = resolveImportedId(seg.id, usedSegmentIds, segmentIdFirstOccurrenceMap);
+      return { ...seg, id: newSegId };
+    });
+
+    reelCopy.checklist = reelCopy.checklist.map((item) => {
+      const newItemId = resolveImportedId(item.id, usedChecklistIds);
+      const newSegId = item.segmentId ? (segmentIdFirstOccurrenceMap[item.segmentId] || item.segmentId) : null;
+      return { ...item, id: newItemId, segmentId: newSegId };
+    });
+
+    return reelCopy;
+  });
+
+  const normalizedTemplates = backupData.templates.map((tpl) => {
+    const tplCopy = structuredClone(tpl);
+    tplCopy.id = resolveImportedId(tplCopy.id, usedTemplateIds);
+    return tplCopy;
+  });
+
+  return {
+    reels: normalizedReels,
+    templates: normalizedTemplates
+  };
+}
+
 function applyBackupOverwrite(backupData) {
   try {
+    const normalizedData = normalizeImportedBackupData(backupData);
     const newState = {
       version: BACKUP_VERSION,
       activeReelId: backupData.activeReelId,
-      reels: structuredClone(backupData.reels),
-      templates: structuredClone(backupData.templates)
+      reels: normalizedData.reels,
+      templates: normalizedData.templates
     };
 
     const reelIds = newState.reels.map((r) => r.id);
@@ -1701,65 +1764,27 @@ function applyBackupMerge(backupData) {
       r.checklist.forEach((c) => usedChecklistIds.add(c.id));
     });
 
-    const segmentIdFirstOccurrenceMap = {};
-
-    function generateUniqueId(usedSet) {
-      let newId;
-      do {
-        newId = crypto.randomUUID();
-      } while (usedSet.has(newId));
-      usedSet.add(newId);
-      return newId;
-    }
-
-    function resolveId(oldId, usedSet, firstOccurrenceMap) {
-      if (!usedSet.has(oldId)) {
-        usedSet.add(oldId);
-        if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
-          firstOccurrenceMap[oldId] = oldId;
-        }
-        return oldId;
-      }
-      const newId = generateUniqueId(usedSet);
-      if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
-        firstOccurrenceMap[oldId] = newId;
-      }
-      return newId;
-    }
+    const normalizedData = normalizeImportedBackupData(backupData, {
+      reels: usedReelIds,
+      segments: usedSegmentIds,
+      templates: usedTemplateIds,
+      checklist: usedChecklistIds
+    });
 
     const mergedReels = [...state.reels];
-
-    backupData.reels.forEach((reel) => {
-      const reelCopy = structuredClone(reel);
-
-      const newReelId = resolveId(reelCopy.id, usedReelIds);
-      if (newReelId !== reelCopy.id) {
+    normalizedData.reels.forEach((reelCopy, index) => {
+      if (reelCopy.id !== backupData.reels[index].id) {
         reelCopy.title = `${reelCopy.title}（导入）`;
       }
-      reelCopy.id = newReelId;
-
-      reelCopy.segments = reelCopy.segments.map((seg) => {
-        const newSegId = resolveId(seg.id, usedSegmentIds, segmentIdFirstOccurrenceMap);
-        return { ...seg, id: newSegId };
-      });
-
-      reelCopy.checklist = reelCopy.checklist.map((item) => {
-        const newItemId = resolveId(item.id, usedChecklistIds);
-        const newSegId = item.segmentId ? (segmentIdFirstOccurrenceMap[item.segmentId] || item.segmentId) : null;
-        return { ...item, id: newItemId, segmentId: newSegId };
-      });
 
       mergedReels.push(reelCopy);
     });
 
     const mergedTemplates = [...state.templates];
-    backupData.templates.forEach((tpl) => {
-      const tplCopy = structuredClone(tpl);
-      const newTplId = resolveId(tplCopy.id, usedTemplateIds);
-      if (newTplId !== tplCopy.id) {
+    normalizedData.templates.forEach((tplCopy, index) => {
+      if (tplCopy.id !== backupData.templates[index].id) {
         tplCopy.name = `${tplCopy.name}（导入）`;
       }
-      tplCopy.id = newTplId;
       mergedTemplates.push(tplCopy);
     });
 
