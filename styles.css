@@ -1962,6 +1962,27 @@ label {
   line-height: 1.6;
 }
 
+.backup-warnings {
+  border: 1px solid rgba(208, 154, 59, 0.35);
+  border-radius: 10px;
+  background: rgba(208, 154, 59, 0.06);
+  padding: 14px 16px;
+}
+
+.backup-warnings h4 {
+  margin: 0 0 8px;
+  color: var(--amber);
+  font-size: 14px;
+}
+
+.backup-warnings ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--amber);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .backup-preview-wrap {
   border: 1px solid var(--line);
   border-radius: 12px;

@@ -234,6 +234,7 @@ const els = {
   backupTemplateCount: document.querySelector("#backupTemplateCount"),
   backupFileInput: document.querySelector("#backupFileInput"),
   backupErrors: document.querySelector("#backupErrors"),
+  backupWarnings: document.querySelector("#backupWarnings"),
   backupPreviewWrap: document.querySelector("#backupPreviewWrap"),
   backupVersionBadge: document.querySelector("#backupVersionBadge"),
   previewReelCount: document.querySelector("#previewReelCount"),
@@ -1357,6 +1358,7 @@ function closeBackupModal() {
 function resetBackupImportState() {
   els.backupFileInput.value = "";
   els.backupErrors.style.display = "none";
+  els.backupWarnings.style.display = "none";
   els.backupPreviewWrap.style.display = "none";
   els.backupConflictInfo.style.display = "none";
   els.backupConfirmBtn.disabled = true;
@@ -1397,51 +1399,93 @@ function exportBackup() {
 function validateBackupStructure(data) {
   const errors = [];
 
-  if (!data || typeof data !== "object") {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
     errors.push("备份文件内容不是有效的 JSON 对象");
     return { valid: false, errors };
   }
 
   if (data.version === undefined) {
     errors.push("缺少 version 字段，无法识别备份版本");
+  } else if (typeof data.version !== "number") {
+    errors.push("version 字段必须是数字类型");
   } else if (data.version !== BACKUP_VERSION) {
     errors.push(`备份版本不兼容：当前应用版本 v${BACKUP_VERSION}，备份文件版本 v${data.version}`);
   }
 
+  if (data.exportedAt !== undefined && typeof data.exportedAt !== "number") {
+    errors.push("exportedAt 字段必须是数字类型（时间戳）");
+  }
+
   if (!Array.isArray(data.reels)) {
-    errors.push("缺少 reels 数组或格式不正确");
+    errors.push("缺少 reels 数组或格式不正确（必须是数组类型）");
   } else {
     data.reels.forEach((reel, reelIdx) => {
+      if (!reel || typeof reel !== "object" || Array.isArray(reel)) {
+        errors.push(`胶片卷[${reelIdx}]不是有效的对象`);
+        return;
+      }
+
       const missingReelFields = REQUIRED_REEL_FIELDS.filter((f) => !(f in reel));
       if (missingReelFields.length > 0) {
         errors.push(`胶片卷[${reelIdx}]缺少字段：${missingReelFields.join("、")}`);
       }
-      if (Array.isArray(reel.segments)) {
+
+      if (!Array.isArray(reel.segments)) {
+        errors.push(`胶片卷[${reelIdx}]的 segments 字段不是数组类型`);
+      } else {
         reel.segments.forEach((seg, segIdx) => {
+          if (!seg || typeof seg !== "object" || Array.isArray(seg)) {
+            errors.push(`胶片卷[${reelIdx}]片段[${segIdx}]不是有效的对象`);
+            return;
+          }
           const missingSegFields = REQUIRED_SEGMENT_FIELDS.filter((f) => !(f in seg));
           if (missingSegFields.length > 0) {
             errors.push(`胶片卷[${reelIdx}]片段[${segIdx}]缺少字段：${missingSegFields.join("、")}`);
           }
+          if (typeof seg.id !== "string" || seg.id.trim() === "") {
+            errors.push(`胶片卷[${reelIdx}]片段[${segIdx}]的 id 字段必须是非空字符串`);
+          }
         });
       }
-      if (Array.isArray(reel.checklist)) {
+
+      if (!Array.isArray(reel.checklist)) {
+        errors.push(`胶片卷[${reelIdx}]的 checklist 字段不是数组类型`);
+      } else {
         reel.checklist.forEach((item, itemIdx) => {
+          if (!item || typeof item !== "object" || Array.isArray(item)) {
+            errors.push(`胶片卷[${reelIdx}]检查项[${itemIdx}]不是有效的对象`);
+            return;
+          }
           const missingItemFields = REQUIRED_CHECKLIST_FIELDS.filter((f) => !(f in item));
           if (missingItemFields.length > 0) {
             errors.push(`胶片卷[${reelIdx}]检查项[${itemIdx}]缺少字段：${missingItemFields.join("、")}`);
           }
+          if (typeof item.id !== "string" || item.id.trim() === "") {
+            errors.push(`胶片卷[${reelIdx}]检查项[${itemIdx}]的 id 字段必须是非空字符串`);
+          }
         });
+      }
+
+      if (typeof reel.id !== "string" || reel.id.trim() === "") {
+        errors.push(`胶片卷[${reelIdx}]的 id 字段必须是非空字符串`);
       }
     });
   }
 
   if (!Array.isArray(data.templates)) {
-    errors.push("缺少 templates 数组或格式不正确");
+    errors.push("缺少 templates 数组或格式不正确（必须是数组类型）");
   } else {
     data.templates.forEach((tpl, tplIdx) => {
+      if (!tpl || typeof tpl !== "object" || Array.isArray(tpl)) {
+        errors.push(`模板[${tplIdx}]不是有效的对象`);
+        return;
+      }
       const missingTplFields = REQUIRED_TEMPLATE_FIELDS.filter((f) => !(f in tpl));
       if (missingTplFields.length > 0) {
         errors.push(`模板[${tplIdx}]缺少字段：${missingTplFields.join("、")}`);
+      }
+      if (typeof tpl.id !== "string" || tpl.id.trim() === "") {
+        errors.push(`模板[${tplIdx}]的 id 字段必须是非空字符串`);
       }
     });
   }
@@ -1487,9 +1531,52 @@ function detectIdConflicts(backupData) {
   };
 }
 
+function detectInternalDuplicateIds(backupData) {
+  function findDuplicates(ids) {
+    const seen = new Set();
+    const duplicates = new Set();
+    for (const id of ids) {
+      if (seen.has(id)) {
+        duplicates.add(id);
+      } else {
+        seen.add(id);
+      }
+    }
+    return [...duplicates];
+  }
+
+  const reelIds = [];
+  const segmentIds = [];
+  const templateIds = [];
+  const checklistIds = [];
+
+  backupData.reels.forEach((r) => {
+    reelIds.push(r.id);
+    r.segments.forEach((s) => segmentIds.push(s.id));
+    r.checklist.forEach((c) => checklistIds.push(c.id));
+  });
+  backupData.templates.forEach((t) => templateIds.push(t.id));
+
+  const duplicateReelIds = findDuplicates(reelIds);
+  const duplicateSegmentIds = findDuplicates(segmentIds);
+  const duplicateTemplateIds = findDuplicates(templateIds);
+  const duplicateChecklistIds = findDuplicates(checklistIds);
+
+  return {
+    hasDuplicates: duplicateReelIds.length > 0 || duplicateSegmentIds.length > 0 || duplicateTemplateIds.length > 0 || duplicateChecklistIds.length > 0,
+    reelDuplicates: duplicateReelIds.length,
+    segmentDuplicates: duplicateSegmentIds.length,
+    templateDuplicates: duplicateTemplateIds.length,
+    checklistDuplicates: duplicateChecklistIds.length,
+    totalDuplicates: duplicateReelIds.length + duplicateSegmentIds.length + duplicateTemplateIds.length + duplicateChecklistIds.length
+  };
+}
+
 function handleBackupFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
+
+  els.backupWarnings.style.display = "none";
 
   const reader = new FileReader();
   reader.onload = () => {
@@ -1522,6 +1609,21 @@ function validateAndPreviewBackup(data) {
   }
 
   els.backupErrors.style.display = "none";
+
+  const internalDupReport = detectInternalDuplicateIds(data);
+  if (internalDupReport.hasDuplicates) {
+    const dupWarnings = ["备份文件内部存在重复 ID，数据可能已损坏："];
+    const parts = [];
+    if (internalDupReport.reelDuplicates > 0) parts.push(`${internalDupReport.reelDuplicates} 个胶片卷 ID`);
+    if (internalDupReport.segmentDuplicates > 0) parts.push(`${internalDupReport.segmentDuplicates} 个片段 ID`);
+    if (internalDupReport.templateDuplicates > 0) parts.push(`${internalDupReport.templateDuplicates} 个模板 ID`);
+    if (internalDupReport.checklistDuplicates > 0) parts.push(`${internalDupReport.checklistDuplicates} 个检查项 ID`);
+    dupWarnings.push(`共 ${internalDupReport.totalDuplicates} 个重复 ID（${parts.join("、")}）。`);
+    dupWarnings.push("恢复时将自动为重复 ID 生成新的唯一标识，避免数据冲突。");
+    showBackupWarnings(dupWarnings);
+  } else {
+    els.backupWarnings.style.display = "none";
+  }
 
   const totalSegments = data.reels.reduce((sum, r) => sum + (r.segments?.length || 0), 0);
   const exportDate = data.exportedAt ? new Date(data.exportedAt) : null;
@@ -1556,6 +1658,12 @@ function validateAndPreviewBackup(data) {
 function showBackupErrors(errors) {
   els.backupErrors.innerHTML = `<h4>⚠ 备份校验失败</h4><ul>${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>`;
   els.backupErrors.style.display = "block";
+  els.backupWarnings.style.display = "none";
+}
+
+function showBackupWarnings(warnings) {
+  els.backupWarnings.innerHTML = `<h4>⚠ 备份数据存在问题</h4><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`;
+  els.backupWarnings.style.display = "block";
 }
 
 function applyBackupOverwrite(backupData) {
@@ -1583,43 +1691,61 @@ function applyBackupOverwrite(backupData) {
 
 function applyBackupMerge(backupData) {
   try {
-    const currentReelIds = new Set(state.reels.map((r) => r.id));
-    const currentSegmentIds = new Set();
-    const currentTemplateIds = new Set(state.templates.map((t) => t.id));
-    const currentChecklistIds = new Set();
+    const usedReelIds = new Set(state.reels.map((r) => r.id));
+    const usedSegmentIds = new Set();
+    const usedTemplateIds = new Set(state.templates.map((t) => t.id));
+    const usedChecklistIds = new Set();
 
     state.reels.forEach((r) => {
-      r.segments.forEach((s) => currentSegmentIds.add(s.id));
-      r.checklist.forEach((c) => currentChecklistIds.add(c.id));
+      r.segments.forEach((s) => usedSegmentIds.add(s.id));
+      r.checklist.forEach((c) => usedChecklistIds.add(c.id));
     });
 
-    const idReplacementMap = {};
+    const segmentIdFirstOccurrenceMap = {};
 
-    function getNewId(oldId, existingSet) {
-      if (!idReplacementMap[oldId] && existingSet.has(oldId)) {
-        idReplacementMap[oldId] = crypto.randomUUID();
+    function generateUniqueId(usedSet) {
+      let newId;
+      do {
+        newId = crypto.randomUUID();
+      } while (usedSet.has(newId));
+      usedSet.add(newId);
+      return newId;
+    }
+
+    function resolveId(oldId, usedSet, firstOccurrenceMap) {
+      if (!usedSet.has(oldId)) {
+        usedSet.add(oldId);
+        if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
+          firstOccurrenceMap[oldId] = oldId;
+        }
+        return oldId;
       }
-      return idReplacementMap[oldId] || oldId;
+      const newId = generateUniqueId(usedSet);
+      if (firstOccurrenceMap && !(oldId in firstOccurrenceMap)) {
+        firstOccurrenceMap[oldId] = newId;
+      }
+      return newId;
     }
 
     const mergedReels = [...state.reels];
+
     backupData.reels.forEach((reel) => {
       const reelCopy = structuredClone(reel);
 
-      const newReelId = getNewId(reelCopy.id, currentReelIds);
+      const newReelId = resolveId(reelCopy.id, usedReelIds);
       if (newReelId !== reelCopy.id) {
         reelCopy.title = `${reelCopy.title}（导入）`;
       }
       reelCopy.id = newReelId;
 
       reelCopy.segments = reelCopy.segments.map((seg) => {
-        const newSegId = getNewId(seg.id, currentSegmentIds);
+        const newSegId = resolveId(seg.id, usedSegmentIds, segmentIdFirstOccurrenceMap);
         return { ...seg, id: newSegId };
       });
 
       reelCopy.checklist = reelCopy.checklist.map((item) => {
-        const newItemId = getNewId(item.id, currentChecklistIds);
-        const newSegId = item.segmentId ? getNewId(item.segmentId, currentSegmentIds) : null;
+        const newItemId = resolveId(item.id, usedChecklistIds);
+        const newSegId = item.segmentId ? (segmentIdFirstOccurrenceMap[item.segmentId] || item.segmentId) : null;
         return { ...item, id: newItemId, segmentId: newSegId };
       });
 
@@ -1629,7 +1755,7 @@ function applyBackupMerge(backupData) {
     const mergedTemplates = [...state.templates];
     backupData.templates.forEach((tpl) => {
       const tplCopy = structuredClone(tpl);
-      const newTplId = getNewId(tplCopy.id, currentTemplateIds);
+      const newTplId = resolveId(tplCopy.id, usedTemplateIds);
       if (newTplId !== tplCopy.id) {
         tplCopy.name = `${tplCopy.name}（导入）`;
       }
