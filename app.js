@@ -959,6 +959,7 @@ els.drawerThumbInput.addEventListener("change", async (event) => {
 const validShifts = ["正常", "偏红", "偏青", "偏黄", "褪色"];
 const validDamages = ["完好", "轻微划痕", "齿孔破损", "接片松动", "需跳过"];
 let importParsedRows = [];
+const importHeaderFields = ["片段编号", "秒数", "颜色偏移", "破损情况", "备注"];
 
 function openImportModal() {
   els.importModal.classList.add("open");
@@ -1018,7 +1019,9 @@ function parseCsvText(text) {
     const raw = lines[i].trim();
     if (!raw) continue;
     const fields = parseCsvLine(raw);
-    if (fields.length === 1 && fields[0].toLowerCase() === "片段编号") continue;
+    const normalizedFields = fields.map((field) => field.trim().toLowerCase());
+    const isHeaderRow = importHeaderFields.every((field, index) => normalizedFields[index] === field.toLowerCase());
+    if (isHeaderRow) continue;
     if (fields.length === 5 || fields.length === 4) {
       rows.push({ lineNum: i + 1, raw, fields });
     } else {
@@ -1064,7 +1067,7 @@ function validateImportRows(rows) {
     }
 
     const durationNum = Number(trimmedDuration);
-    if (!trimmedDuration || isNaN(durationNum) || durationNum <= 0 || !Number.isFinite(durationNum)) {
+    if (!/^\d+$/.test(trimmedDuration) || durationNum <= 0 || !Number.isFinite(durationNum)) {
       errors.push("非法时长（需为正整数）");
     }
 
