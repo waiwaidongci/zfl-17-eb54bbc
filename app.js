@@ -56,6 +56,8 @@ const defaultState = {
 
 let state = loadState();
 let draggedId = null;
+let activeDrawerSegmentId = null;
+let drawerThumbDataUrl = "";
 
 const els = {
   reelTitle: document.querySelector("#reelTitle"),
@@ -88,7 +90,19 @@ const els = {
   checklistInput: document.querySelector("#checklistInput"),
   autoChecklist: document.querySelector("#autoChecklist"),
   manualChecklist: document.querySelector("#manualChecklist"),
-  checklistStats: document.querySelector("#checklistStats")
+  checklistStats: document.querySelector("#checklistStats"),
+  segmentDrawer: document.querySelector("#segmentDrawer"),
+  drawerBackdrop: document.querySelector("#drawerBackdrop"),
+  drawerClose: document.querySelector("#drawerClose"),
+  drawerThumb: document.querySelector("#drawerThumb"),
+  drawerThumbInput: document.querySelector("#drawerThumbInput"),
+  drawerForm: document.querySelector("#drawerForm"),
+  drawerCode: document.querySelector("#drawerCode"),
+  drawerDuration: document.querySelector("#drawerDuration"),
+  drawerShift: document.querySelector("#drawerShift"),
+  drawerDamage: document.querySelector("#drawerDamage"),
+  drawerNote: document.querySelector("#drawerNote"),
+  drawerDelete: document.querySelector("#drawerDelete")
 };
 
 function loadState() {
@@ -131,7 +145,7 @@ function renderList() {
         const realIndex = state.segments.findIndex((segment) => segment.id === item.id);
         const hasDamage = item.damage !== "完好";
         return `
-          <article class="segment-card" draggable="true" data-id="${item.id}">
+          <article class="segment-card" draggable="true" data-id="${item.id}" data-view="${item.id}" title="点击查看详情">
             <div class="thumb">
               ${
                 item.thumb
@@ -431,6 +445,82 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function openDrawer(segmentId) {
+  const segment = state.segments.find((s) => s.id === segmentId);
+  if (!segment) return;
+
+  activeDrawerSegmentId = segmentId;
+  drawerThumbDataUrl = segment.thumb || "";
+  populateDrawer(segment);
+
+  els.segmentDrawer.classList.add("open");
+  els.drawerBackdrop.classList.add("open");
+  els.segmentDrawer.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeDrawer() {
+  activeDrawerSegmentId = null;
+  drawerThumbDataUrl = "";
+  els.segmentDrawer.classList.remove("open");
+  els.drawerBackdrop.classList.remove("open");
+  els.segmentDrawer.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  els.drawerForm.reset();
+}
+
+function populateDrawer(segment) {
+  const realIndex = state.segments.findIndex((s) => s.id === segment.id);
+
+  if (segment.thumb) {
+    els.drawerThumb.innerHTML = `<img src="${segment.thumb}" alt="${escapeHtml(segment.code)}缩略图" />`;
+  } else {
+    els.drawerThumb.innerHTML = `<div class="film-placeholder" style="background:${fallbackThumbs[realIndex % fallbackThumbs.length]}">${escapeHtml(segment.code)}</div>`;
+  }
+
+  els.drawerCode.value = segment.code;
+  els.drawerDuration.value = segment.duration;
+  els.drawerShift.value = segment.shift;
+  els.drawerDamage.value = segment.damage;
+  els.drawerNote.value = segment.note || "";
+  drawerThumbDataUrl = segment.thumb || "";
+}
+
+async function saveDrawerEdits(event) {
+  event.preventDefault();
+  if (!activeDrawerSegmentId) return;
+
+  const segmentIndex = state.segments.findIndex((s) => s.id === activeDrawerSegmentId);
+  if (segmentIndex < 0) return;
+
+  const file = els.drawerThumbInput.files[0];
+  if (file) {
+    drawerThumbDataUrl = await readFileAsDataUrl(file);
+  }
+
+  state.segments[segmentIndex] = {
+    ...state.segments[segmentIndex],
+    code: els.drawerCode.value.trim(),
+    duration: Number(els.drawerDuration.value),
+    shift: els.drawerShift.value,
+    damage: els.drawerDamage.value,
+    note: els.drawerNote.value.trim(),
+    thumb: drawerThumbDataUrl
+  };
+
+  renderAll();
+  closeDrawer();
+}
+
+function deleteFromDrawer() {
+  if (!activeDrawerSegmentId) return;
+  if (!confirm("确定要删除此片段吗？此操作不可撤销。")) return;
+
+  state.segments = state.segments.filter((s) => s.id !== activeDrawerSegmentId);
+  renderAll();
+  closeDrawer();
+}
+
 els.reelTitle.addEventListener("input", () => {
   state.reelTitle = els.reelTitle.value;
   saveState();
@@ -444,11 +534,23 @@ els.segmentList.addEventListener("click", (event) => {
   const up = event.target.closest("[data-move-up]");
   const down = event.target.closest("[data-move-down]");
   const remove = event.target.closest("[data-delete]");
-  if (up) moveSegment(up.dataset.moveUp, -1);
-  if (down) moveSegment(down.dataset.moveDown, 1);
+  const view = event.target.closest("[data-view]");
+
+  if (up) {
+    event.stopPropagation();
+    moveSegment(up.dataset.moveUp, -1);
+  }
+  if (down) {
+    event.stopPropagation();
+    moveSegment(down.dataset.moveDown, 1);
+  }
   if (remove) {
+    event.stopPropagation();
     state.segments = state.segments.filter((item) => item.id !== remove.dataset.delete);
     renderAll();
+  }
+  if (view && !up && !down && !remove) {
+    openDrawer(view.dataset.view);
   }
 });
 
@@ -506,6 +608,27 @@ document.querySelector(".checklist-panel").addEventListener("click", (event) => 
 document.querySelector(".checklist-panel").addEventListener("change", (event) => {
   const toggle = event.target.closest("[data-toggle-check]");
   if (toggle) toggleChecklistItem(toggle.dataset.toggleCheck);
+});
+
+els.drawerClose.addEventListener("click", closeDrawer);
+els.drawerBackdrop.addEventListener("click", closeDrawer);
+els.drawerForm.addEventListener("submit", saveDrawerEdits);
+els.drawerDelete.addEventListener("click", deleteFromDrawer);
+
+els.drawerThumbInput.addEventListener("change", async (event) => {
+  const file = event.target.files[0];
+  if (file) {
+    drawerThumbDataUrl = await readFileAsDataUrl(file);
+    if (drawerThumbDataUrl) {
+      els.drawerThumb.innerHTML = `<img src="${drawerThumbDataUrl}" alt="缩略图预览" />`;
+    }
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && activeDrawerSegmentId) {
+    closeDrawer();
+  }
 });
 
 renderAll();

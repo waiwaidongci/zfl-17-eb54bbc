@@ -199,6 +199,63 @@
       </section>
     </main>
 
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+    <aside class="drawer" id="segmentDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2>片段详情</h2>
+        <button type="button" class="drawer-close" id="drawerClose" title="关闭">×</button>
+      </div>
+      <div class="drawer-content">
+        <div class="drawer-thumb-section">
+          <div class="drawer-thumb" id="drawerThumb">
+            <div class="film-placeholder">—</div>
+          </div>
+          <label class="drawer-thumb-upload">
+            <input type="file" id="drawerThumbInput" accept="image/*" />
+            <span>更换缩略图</span>
+          </label>
+        </div>
+        <form id="drawerForm" class="drawer-form">
+          <label>
+            片段编号
+            <input id="drawerCode" required placeholder="A-014" />
+          </label>
+          <label>
+            时长秒数
+            <input id="drawerDuration" required type="number" min="1" value="12" />
+          </label>
+          <label>
+            颜色偏移
+            <select id="drawerShift">
+              <option value="正常">正常</option>
+              <option value="偏红">偏红</option>
+              <option value="偏青">偏青</option>
+              <option value="偏黄">偏黄</option>
+              <option value="褪色">褪色</option>
+            </select>
+          </label>
+          <label>
+            破损情况
+            <select id="drawerDamage">
+              <option value="完好">完好</option>
+              <option value="轻微划痕">轻微划痕</option>
+              <option value="齿孔破损">齿孔破损</option>
+              <option value="接片松动">接片松动</option>
+              <option value="需跳过">需跳过</option>
+            </select>
+          </label>
+          <label>
+            完整备注
+            <textarea id="drawerNote" rows="6" placeholder="试映前要留意的画面、接片或声音点"></textarea>
+          </label>
+          <div class="drawer-actions">
+            <button type="submit" class="primary">保存修改</button>
+            <button type="button" id="drawerDelete" class="drawer-delete-btn">删除此片段</button>
+          </div>
+        </form>
+      </div>
+    </aside>
+
     <script src="app.js"></script>
   </body>
 </html>
