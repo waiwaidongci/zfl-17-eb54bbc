@@ -222,7 +222,28 @@ const els = {
   importConfirmBtn: document.querySelector("#importConfirmBtn"),
   importCancelBtn: document.querySelector("#importCancelBtn"),
   timelineBar: document.querySelector("#timelineBar"),
-  timelineFilterHint: document.querySelector("#timelineFilterHint")
+  timelineFilterHint: document.querySelector("#timelineFilterHint"),
+
+  backupBtn: document.querySelector("#backupBtn"),
+  backupModalBackdrop: document.querySelector("#backupModalBackdrop"),
+  backupModal: document.querySelector("#backupModal"),
+  backupModalClose: document.querySelector("#backupModalClose"),
+  backupExportBtn: document.querySelector("#backupExportBtn"),
+  backupReelCount: document.querySelector("#backupReelCount"),
+  backupSegmentCount: document.querySelector("#backupSegmentCount"),
+  backupTemplateCount: document.querySelector("#backupTemplateCount"),
+  backupFileInput: document.querySelector("#backupFileInput"),
+  backupErrors: document.querySelector("#backupErrors"),
+  backupPreviewWrap: document.querySelector("#backupPreviewWrap"),
+  backupVersionBadge: document.querySelector("#backupVersionBadge"),
+  previewReelCount: document.querySelector("#previewReelCount"),
+  previewSegmentCount: document.querySelector("#previewSegmentCount"),
+  previewTemplateCount: document.querySelector("#previewTemplateCount"),
+  previewExportTime: document.querySelector("#previewExportTime"),
+  backupConflictInfo: document.querySelector("#backupConflictInfo"),
+  backupConflictText: document.querySelector("#backupConflictText"),
+  backupConfirmBtn: document.querySelector("#backupConfirmBtn"),
+  backupCancelBtn: document.querySelector("#backupCancelBtn")
 };
 
 function getFilteredSegments() {
@@ -1294,7 +1315,9 @@ els.importCsvFile.addEventListener("change", () => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (els.importModal.classList.contains("open")) {
+    if (els.backupModal.classList.contains("open")) {
+      closeBackupModal();
+    } else if (els.importModal.classList.contains("open")) {
       closeImportModal();
     } else if (activeDrawerSegmentId) {
       closeDrawer();
@@ -1303,5 +1326,371 @@ document.addEventListener("keydown", (event) => {
     }
   }
 });
+
+const BACKUP_VERSION = 2;
+const REQUIRED_REEL_FIELDS = ["id", "title", "createdAt", "segments", "checklist"];
+const REQUIRED_SEGMENT_FIELDS = ["id", "code", "duration", "shift", "damage", "note", "thumb"];
+const REQUIRED_TEMPLATE_FIELDS = ["id", "name", "duration", "shift", "damage", "notePrefix"];
+const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "completed"];
+
+let backupParsedData = null;
+let backupConflictReport = null;
+
+function openBackupModal() {
+  els.backupModal.classList.add("open");
+  els.backupModalBackdrop.classList.add("open");
+  els.backupModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  updateBackupExportInfo();
+  resetBackupImportState();
+}
+
+function closeBackupModal() {
+  els.backupModal.classList.remove("open");
+  els.backupModalBackdrop.classList.remove("open");
+  els.backupModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  backupParsedData = null;
+  backupConflictReport = null;
+}
+
+function resetBackupImportState() {
+  els.backupFileInput.value = "";
+  els.backupErrors.style.display = "none";
+  els.backupPreviewWrap.style.display = "none";
+  els.backupConflictInfo.style.display = "none";
+  els.backupConfirmBtn.disabled = true;
+  backupParsedData = null;
+  backupConflictReport = null;
+  const radios = document.querySelectorAll('input[name="backupMode"]');
+  radios.forEach((r) => {
+    if (r.value === "overwrite") r.checked = true;
+  });
+}
+
+function updateBackupExportInfo() {
+  const totalSegments = state.reels.reduce((sum, r) => sum + r.segments.length, 0);
+  els.backupReelCount.textContent = `${state.reels.length} 卷`;
+  els.backupSegmentCount.textContent = `${totalSegments} 个`;
+  els.backupTemplateCount.textContent = `${state.templates.length} 个`;
+}
+
+function exportBackup() {
+  const backupData = {
+    version: BACKUP_VERSION,
+    exportedAt: Date.now(),
+    activeReelId: state.activeReelId,
+    reels: structuredClone(state.reels),
+    templates: structuredClone(state.templates)
+  };
+
+  const jsonStr = JSON.stringify(backupData, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  link.download = `film-reel-backup-${dateStr}.json`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function validateBackupStructure(data) {
+  const errors = [];
+
+  if (!data || typeof data !== "object") {
+    errors.push("备份文件内容不是有效的 JSON 对象");
+    return { valid: false, errors };
+  }
+
+  if (data.version === undefined) {
+    errors.push("缺少 version 字段，无法识别备份版本");
+  } else if (data.version !== BACKUP_VERSION) {
+    errors.push(`备份版本不兼容：当前应用版本 v${BACKUP_VERSION}，备份文件版本 v${data.version}`);
+  }
+
+  if (!Array.isArray(data.reels)) {
+    errors.push("缺少 reels 数组或格式不正确");
+  } else {
+    data.reels.forEach((reel, reelIdx) => {
+      const missingReelFields = REQUIRED_REEL_FIELDS.filter((f) => !(f in reel));
+      if (missingReelFields.length > 0) {
+        errors.push(`胶片卷[${reelIdx}]缺少字段：${missingReelFields.join("、")}`);
+      }
+      if (Array.isArray(reel.segments)) {
+        reel.segments.forEach((seg, segIdx) => {
+          const missingSegFields = REQUIRED_SEGMENT_FIELDS.filter((f) => !(f in seg));
+          if (missingSegFields.length > 0) {
+            errors.push(`胶片卷[${reelIdx}]片段[${segIdx}]缺少字段：${missingSegFields.join("、")}`);
+          }
+        });
+      }
+      if (Array.isArray(reel.checklist)) {
+        reel.checklist.forEach((item, itemIdx) => {
+          const missingItemFields = REQUIRED_CHECKLIST_FIELDS.filter((f) => !(f in item));
+          if (missingItemFields.length > 0) {
+            errors.push(`胶片卷[${reelIdx}]检查项[${itemIdx}]缺少字段：${missingItemFields.join("、")}`);
+          }
+        });
+      }
+    });
+  }
+
+  if (!Array.isArray(data.templates)) {
+    errors.push("缺少 templates 数组或格式不正确");
+  } else {
+    data.templates.forEach((tpl, tplIdx) => {
+      const missingTplFields = REQUIRED_TEMPLATE_FIELDS.filter((f) => !(f in tpl));
+      if (missingTplFields.length > 0) {
+        errors.push(`模板[${tplIdx}]缺少字段：${missingTplFields.join("、")}`);
+      }
+    });
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function detectIdConflicts(backupData) {
+  const currentReelIds = new Set(state.reels.map((r) => r.id));
+  const currentSegmentIds = new Set();
+  const currentTemplateIds = new Set(state.templates.map((t) => t.id));
+  const currentChecklistIds = new Set();
+
+  state.reels.forEach((r) => {
+    r.segments.forEach((s) => currentSegmentIds.add(s.id));
+    r.checklist.forEach((c) => currentChecklistIds.add(c.id));
+  });
+
+  const backupReelIds = new Set();
+  const backupSegmentIds = new Set();
+  const backupTemplateIds = new Set();
+  const backupChecklistIds = new Set();
+
+  backupData.reels.forEach((r) => {
+    backupReelIds.add(r.id);
+    r.segments.forEach((s) => backupSegmentIds.add(s.id));
+    r.checklist.forEach((c) => backupChecklistIds.add(c.id));
+  });
+  backupData.templates.forEach((t) => backupTemplateIds.add(t.id));
+
+  const reelConflicts = [...backupReelIds].filter((id) => currentReelIds.has(id));
+  const segmentConflicts = [...backupSegmentIds].filter((id) => currentSegmentIds.has(id));
+  const templateConflicts = [...backupTemplateIds].filter((id) => currentTemplateIds.has(id));
+  const checklistConflicts = [...backupChecklistIds].filter((id) => currentChecklistIds.has(id));
+
+  return {
+    hasConflicts: reelConflicts.length > 0 || segmentConflicts.length > 0 || templateConflicts.length > 0 || checklistConflicts.length > 0,
+    reelConflicts: reelConflicts.length,
+    segmentConflicts: segmentConflicts.length,
+    templateConflicts: templateConflicts.length,
+    checklistConflicts: checklistConflicts.length,
+    totalConflicts: reelConflicts.length + segmentConflicts.length + templateConflicts.length + checklistConflicts.length
+  };
+}
+
+function handleBackupFileSelect(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      validateAndPreviewBackup(data);
+    } catch (e) {
+      showBackupErrors(["文件解析失败：不是有效的 JSON 文件"]);
+      els.backupPreviewWrap.style.display = "none";
+      els.backupConfirmBtn.disabled = true;
+    }
+  };
+  reader.onerror = () => {
+    showBackupErrors(["文件读取失败，请重试"]);
+    els.backupPreviewWrap.style.display = "none";
+    els.backupConfirmBtn.disabled = true;
+  };
+  reader.readAsText(file, "UTF-8");
+}
+
+function validateAndPreviewBackup(data) {
+  const validation = validateBackupStructure(data);
+
+  if (!validation.valid) {
+    showBackupErrors(validation.errors);
+    els.backupPreviewWrap.style.display = "none";
+    els.backupConfirmBtn.disabled = true;
+    backupParsedData = null;
+    return;
+  }
+
+  els.backupErrors.style.display = "none";
+
+  const totalSegments = data.reels.reduce((sum, r) => sum + (r.segments?.length || 0), 0);
+  const exportDate = data.exportedAt ? new Date(data.exportedAt) : null;
+  const exportTimeStr = exportDate
+    ? `${exportDate.getFullYear()}/${String(exportDate.getMonth() + 1).padStart(2, "0")}/${String(exportDate.getDate()).padStart(2, "0")} ${String(exportDate.getHours()).padStart(2, "0")}:${String(exportDate.getMinutes()).padStart(2, "0")}`
+    : "未知";
+
+  els.backupVersionBadge.textContent = `v${data.version}`;
+  els.previewReelCount.textContent = `${data.reels.length} 卷`;
+  els.previewSegmentCount.textContent = `${totalSegments} 个`;
+  els.previewTemplateCount.textContent = `${data.templates.length} 个`;
+  els.previewExportTime.textContent = exportTimeStr;
+
+  backupConflictReport = detectIdConflicts(data);
+  if (backupConflictReport.hasConflicts) {
+    els.backupConflictInfo.style.display = "block";
+    const parts = [];
+    if (backupConflictReport.reelConflicts > 0) parts.push(`${backupConflictReport.reelConflicts} 个胶片卷 ID`);
+    if (backupConflictReport.segmentConflicts > 0) parts.push(`${backupConflictReport.segmentConflicts} 个片段 ID`);
+    if (backupConflictReport.templateConflicts > 0) parts.push(`${backupConflictReport.templateConflicts} 个模板 ID`);
+    if (backupConflictReport.checklistConflicts > 0) parts.push(`${backupConflictReport.checklistConflicts} 个检查项 ID`);
+    els.backupConflictText.textContent = `检测到 ${backupConflictReport.totalConflicts} 个 ID 冲突（${parts.join("、")}）。合并模式下将自动生成新 ID。`;
+  } else {
+    els.backupConflictInfo.style.display = "none";
+  }
+
+  backupParsedData = data;
+  els.backupPreviewWrap.style.display = "flex";
+  els.backupConfirmBtn.disabled = false;
+}
+
+function showBackupErrors(errors) {
+  els.backupErrors.innerHTML = `<h4>⚠ 备份校验失败</h4><ul>${errors.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>`;
+  els.backupErrors.style.display = "block";
+}
+
+function applyBackupOverwrite(backupData) {
+  try {
+    const newState = {
+      version: BACKUP_VERSION,
+      activeReelId: backupData.activeReelId,
+      reels: structuredClone(backupData.reels),
+      templates: structuredClone(backupData.templates)
+    };
+
+    const reelIds = newState.reels.map((r) => r.id);
+    if (!reelIds.includes(newState.activeReelId) && reelIds.length > 0) {
+      newState.activeReelId = reelIds[0];
+    }
+
+    state = newState;
+    saveState();
+    renderAll();
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function applyBackupMerge(backupData) {
+  try {
+    const currentReelIds = new Set(state.reels.map((r) => r.id));
+    const currentSegmentIds = new Set();
+    const currentTemplateIds = new Set(state.templates.map((t) => t.id));
+    const currentChecklistIds = new Set();
+
+    state.reels.forEach((r) => {
+      r.segments.forEach((s) => currentSegmentIds.add(s.id));
+      r.checklist.forEach((c) => currentChecklistIds.add(c.id));
+    });
+
+    const idReplacementMap = {};
+
+    function getNewId(oldId, existingSet) {
+      if (!idReplacementMap[oldId] && existingSet.has(oldId)) {
+        idReplacementMap[oldId] = crypto.randomUUID();
+      }
+      return idReplacementMap[oldId] || oldId;
+    }
+
+    const mergedReels = [...state.reels];
+    backupData.reels.forEach((reel) => {
+      const reelCopy = structuredClone(reel);
+
+      const newReelId = getNewId(reelCopy.id, currentReelIds);
+      if (newReelId !== reelCopy.id) {
+        reelCopy.title = `${reelCopy.title}（导入）`;
+      }
+      reelCopy.id = newReelId;
+
+      reelCopy.segments = reelCopy.segments.map((seg) => {
+        const newSegId = getNewId(seg.id, currentSegmentIds);
+        return { ...seg, id: newSegId };
+      });
+
+      reelCopy.checklist = reelCopy.checklist.map((item) => {
+        const newItemId = getNewId(item.id, currentChecklistIds);
+        const newSegId = item.segmentId ? getNewId(item.segmentId, currentSegmentIds) : null;
+        return { ...item, id: newItemId, segmentId: newSegId };
+      });
+
+      mergedReels.push(reelCopy);
+    });
+
+    const mergedTemplates = [...state.templates];
+    backupData.templates.forEach((tpl) => {
+      const tplCopy = structuredClone(tpl);
+      const newTplId = getNewId(tplCopy.id, currentTemplateIds);
+      if (newTplId !== tplCopy.id) {
+        tplCopy.name = `${tplCopy.name}（导入）`;
+      }
+      tplCopy.id = newTplId;
+      mergedTemplates.push(tplCopy);
+    });
+
+    state.reels = mergedReels;
+    state.templates = mergedTemplates;
+    saveState();
+    renderAll();
+
+    return { success: true, mergedCount: backupData.reels.length + backupData.templates.length };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+function confirmBackupRestore() {
+  if (!backupParsedData) return;
+
+  const mode = document.querySelector('input[name="backupMode"]:checked')?.value || "overwrite";
+  const reelCount = backupParsedData.reels.length;
+  const segmentCount = backupParsedData.reels.reduce((sum, r) => sum + r.segments.length, 0);
+
+  let confirmMsg;
+  if (mode === "overwrite") {
+    confirmMsg = `确认用备份数据覆盖当前所有内容？\n\n将恢复：${reelCount} 个胶片卷、${segmentCount} 个片段、${backupParsedData.templates.length} 个模板\n\n此操作将清除当前所有数据，不可撤销。`;
+  } else {
+    confirmMsg = `确认将备份数据合并到当前清单？\n\n将追加：${reelCount} 个胶片卷、${segmentCount} 个片段、${backupParsedData.templates.length} 个模板\n\nID 冲突时会自动生成新 ID。`;
+  }
+
+  if (!confirm(confirmMsg)) return;
+
+  const snapshot = structuredClone(state);
+
+  let result;
+  if (mode === "overwrite") {
+    result = applyBackupOverwrite(backupParsedData);
+  } else {
+    result = applyBackupMerge(backupParsedData);
+  }
+
+  if (!result.success) {
+    state = snapshot;
+    saveState();
+    renderAll();
+    alert(`恢复失败，已回滚到原有数据：${result.error}`);
+    return;
+  }
+
+  alert(mode === "overwrite" ? "数据恢复成功！" : `合并成功！已追加 ${result.mergedCount} 项数据。`);
+  closeBackupModal();
+}
+
+els.backupBtn.addEventListener("click", openBackupModal);
+els.backupModalClose.addEventListener("click", closeBackupModal);
+els.backupModalBackdrop.addEventListener("click", closeBackupModal);
+els.backupCancelBtn.addEventListener("click", closeBackupModal);
+els.backupExportBtn.addEventListener("click", exportBackup);
+els.backupFileInput.addEventListener("change", handleBackupFileSelect);
+els.backupConfirmBtn.addEventListener("click", confirmBackupRestore);
 
 renderAll();

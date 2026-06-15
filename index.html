@@ -62,6 +62,7 @@
         </label>
         <button id="exportBtn">导出清单</button>
         <button id="importBtn">批量导入</button>
+        <button id="backupBtn" class="backup-btn" title="备份与恢复">💾 备份恢复</button>
       </section>
 
       <section class="layout layout-with-templates">
@@ -349,6 +350,106 @@
           <div class="import-actions">
             <button type="button" class="primary" id="importConfirmBtn" disabled>确认导入有效行</button>
             <button type="button" id="importCancelBtn">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="backup-modal-backdrop" id="backupModalBackdrop"></div>
+    <div class="backup-modal" id="backupModal" aria-hidden="true">
+      <div class="backup-modal-header">
+        <h2>本地项目备份与恢复</h2>
+        <button type="button" class="backup-modal-close" id="backupModalClose" title="关闭">×</button>
+      </div>
+      <div class="backup-modal-body">
+        <div class="backup-section">
+          <div class="backup-section-head">
+            <h3>📤 导出备份</h3>
+            <span class="backup-section-desc">将当前所有胶片卷、片段、模板数据导出为 JSON 备份文件</span>
+          </div>
+          <div class="backup-info">
+            <div class="backup-info-item">
+              <span class="backup-info-label">胶片卷</span>
+              <span class="backup-info-value" id="backupReelCount">0 卷</span>
+            </div>
+            <div class="backup-info-item">
+              <span class="backup-info-label">片段总数</span>
+              <span class="backup-info-value" id="backupSegmentCount">0 个</span>
+            </div>
+            <div class="backup-info-item">
+              <span class="backup-info-label">模板数</span>
+              <span class="backup-info-value" id="backupTemplateCount">0 个</span>
+            </div>
+            <div class="backup-info-item">
+              <span class="backup-info-label">数据版本</span>
+              <span class="backup-info-value">v2</span>
+            </div>
+          </div>
+          <button class="primary backup-export-btn" id="backupExportBtn">导出 JSON 备份文件</button>
+        </div>
+
+        <div class="backup-divider"></div>
+
+        <div class="backup-section">
+          <div class="backup-section-head">
+            <h3>📥 导入恢复</h3>
+            <span class="backup-section-desc">选择备份文件恢复数据，导入前会进行校验</span>
+          </div>
+          <label class="backup-file-label">
+            <input type="file" id="backupFileInput" accept=".json" />
+            <span>选择 JSON 备份文件</span>
+          </label>
+          <div class="backup-errors" id="backupErrors" style="display:none"></div>
+          <div class="backup-preview-wrap" id="backupPreviewWrap" style="display:none">
+            <div class="backup-preview-head">
+              <h4>备份预览</h4>
+              <span id="backupVersionBadge" class="backup-version-badge">v2</span>
+            </div>
+            <div class="backup-preview-grid">
+              <div class="backup-preview-item">
+                <span class="backup-preview-label">胶片卷</span>
+                <span class="backup-preview-value" id="previewReelCount">0 卷</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="backup-preview-label">片段总数</span>
+                <span class="backup-preview-value" id="previewSegmentCount">0 个</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="backup-preview-label">模板数</span>
+                <span class="backup-preview-value" id="previewTemplateCount">0 个</span>
+              </div>
+              <div class="backup-preview-item">
+                <span class="backup-preview-label">导出时间</span>
+                <span class="backup-preview-value" id="previewExportTime">—</span>
+              </div>
+            </div>
+            <div class="backup-conflict-info" id="backupConflictInfo" style="display:none">
+              <h4>⚠️ ID 冲突检测</h4>
+              <p id="backupConflictText"></p>
+            </div>
+            <div class="backup-mode-select">
+              <h4>选择恢复方式</h4>
+              <div class="backup-mode-options">
+                <label class="backup-mode-option">
+                  <input type="radio" name="backupMode" value="overwrite" checked />
+                  <div class="backup-mode-card">
+                    <strong>覆盖当前数据</strong>
+                    <span>用备份数据完全替换当前所有内容，当前数据将丢失</span>
+                  </div>
+                </label>
+                <label class="backup-mode-option">
+                  <input type="radio" name="backupMode" value="merge" />
+                  <div class="backup-mode-card">
+                    <strong>合并到当前清单</strong>
+                    <span>将备份中的胶片卷、模板追加到当前数据，ID 冲突时自动生成新 ID</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <div class="backup-actions">
+              <button type="button" class="primary" id="backupConfirmBtn" disabled>确认恢复</button>
+              <button type="button" id="backupCancelBtn">取消</button>
+            </div>
           </div>
         </div>
       </div>
