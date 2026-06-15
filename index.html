@@ -37,6 +37,10 @@
             <span>片段数</span>
             <strong id="segmentCount">0</strong>
           </div>
+          <div class="risk-hero-stat">
+            <span>高风险</span>
+            <strong id="highRiskCount">0</strong>
+          </div>
         </div>
       </header>
 
@@ -200,6 +204,24 @@
           <p class="panel-hint">自动汇总所有破损与颜色偏移片段，便于快速浏览问题分布。如需追踪处理进度，请使用下方检查单。</p>
           <div id="warningList" class="warning-list"></div>
         </aside>
+      </section>
+
+      <section class="risk-section">
+        <div class="panel risk-panel">
+          <div class="panel-head">
+            <h2>试映风险评分</h2>
+            <span id="riskOverviewStats">—</span>
+          </div>
+          <p class="panel-hint">根据颜色偏移、破损类型、片段时长和备注关键词自动计算每个片段的风险等级。高风险片段需重点关注，建议优先处理。</p>
+          <div class="risk-legend">
+            <span class="legend-item"><span class="legend-dot risk-legend-safe"></span> 安全（0分）</span>
+            <span class="legend-item"><span class="legend-dot risk-legend-low"></span> 低风险（1-3分）</span>
+            <span class="legend-item"><span class="legend-dot risk-legend-medium"></span> 中风险（4-6分）</span>
+            <span class="legend-item"><span class="legend-dot risk-legend-high"></span> 高风险（7分+）</span>
+          </div>
+          <div class="risk-summary-bar" id="riskSummaryBar"></div>
+          <div id="riskDetailList" class="risk-detail-list"></div>
+        </div>
       </section>
 
       <section class="checklist-section">
@@ -456,6 +478,7 @@
       </div>
     </div>
 
+    <script src="risk-rules.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

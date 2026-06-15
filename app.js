@@ -2,6 +2,9 @@ const storageKey = "zfl17-film-strip-desk";
 
 const fallbackThumbs = ["#d49b35", "#347d89", "#b54d48", "#4d7656", "#6d6378"];
 
+// 风险评分规则和计算函数已移至 risk-rules.js 集中维护
+// 请编辑 risk-rules.js 文件调整评分标准
+
 function createDefaultReel(title = "春日试映A卷") {
   return {
     id: crypto.randomUUID(),
@@ -244,7 +247,12 @@ const els = {
   backupConflictInfo: document.querySelector("#backupConflictInfo"),
   backupConflictText: document.querySelector("#backupConflictText"),
   backupConfirmBtn: document.querySelector("#backupConfirmBtn"),
-  backupCancelBtn: document.querySelector("#backupCancelBtn")
+  backupCancelBtn: document.querySelector("#backupCancelBtn"),
+
+  highRiskCount: document.querySelector("#highRiskCount"),
+  riskOverviewStats: document.querySelector("#riskOverviewStats"),
+  riskSummaryBar: document.querySelector("#riskSummaryBar"),
+  riskDetailList: document.querySelector("#riskDetailList")
 };
 
 function getFilteredSegments() {
@@ -265,13 +273,16 @@ function renderStats() {
     els.totalDuration.textContent = "0:00";
     els.damageCount.textContent = "0";
     els.segmentCount.textContent = "0";
+    els.highRiskCount.textContent = "0";
     return;
   }
   const total = reel.segments.reduce((sum, item) => sum + Number(item.duration), 0);
   const damaged = reel.segments.filter((item) => item.damage !== "完好").length;
+  const highRisk = reel.segments.filter((item) => calculateSegmentRisk(item).css === "risk-high").length;
   els.totalDuration.textContent = formatDuration(total);
   els.damageCount.textContent = damaged;
   els.segmentCount.textContent = reel.segments.length;
+  els.highRiskCount.textContent = highRisk;
 }
 
 function renderReelHeader() {
@@ -295,6 +306,7 @@ function renderList() {
       .map((item) => {
         const realIndex = reel.segments.findIndex((segment) => segment.id === item.id);
         const hasDamage = item.damage !== "完好";
+        const risk = calculateSegmentRisk(item);
         return `
           <article class="segment-card" draggable="true" data-id="${item.id}" data-view="${item.id}" title="点击查看详情">
             <div class="thumb">
@@ -308,6 +320,7 @@ function renderList() {
               <div class="segment-title">
                 <strong>${realIndex + 1}. ${escapeHtml(item.code)}</strong>
                 <span>${formatDuration(item.duration)}</span>
+                <span class="risk-badge ${risk.css}">${risk.label}</span>
               </div>
               <div class="tag-row">
                 <span class="tag">${escapeHtml(item.shift)}</span>
@@ -337,15 +350,90 @@ function renderWarnings() {
     warnings
       .map((item) => {
         const index = reel.segments.findIndex((segment) => segment.id === item.id) + 1;
+        const risk = calculateSegmentRisk(item);
         const reasons = [item.shift !== "正常" ? item.shift : "", item.damage !== "完好" ? item.damage : ""].filter(Boolean).join(" · ");
         return `
           <div class="warning-item">
-            <strong>${index}. ${escapeHtml(item.code)}</strong>
+            <div class="warning-item-head">
+              <strong>${index}. ${escapeHtml(item.code)}</strong>
+              <span class="risk-badge ${risk.css}">${risk.label} ${risk.score}分</span>
+            </div>
             <span>${escapeHtml(reasons)}${item.note ? `：${escapeHtml(item.note)}` : ""}</span>
           </div>
         `;
       })
       .join("") || `<p class="empty">当前清单没有颜色偏移或破损提醒。</p>`;
+}
+
+function renderRiskOverview() {
+  const reel = getActiveReel();
+  if (!reel) {
+    els.riskOverviewStats.textContent = "—";
+    els.riskSummaryBar.innerHTML = "";
+    els.riskDetailList.innerHTML = `<p class="empty">当前没有胶片卷。</p>`;
+    return;
+  }
+
+  const riskResults = reel.segments.map((seg) => ({
+    segment: seg,
+    risk: calculateSegmentRisk(seg)
+  }));
+
+  const safeCount = riskResults.filter((r) => r.risk.css === "risk-safe").length;
+  const lowCount = riskResults.filter((r) => r.risk.css === "risk-low").length;
+  const mediumCount = riskResults.filter((r) => r.risk.css === "risk-medium").length;
+  const highCount = riskResults.filter((r) => r.risk.css === "risk-high").length;
+  const total = riskResults.length;
+
+  els.riskOverviewStats.textContent = `高风险 ${highCount} · 中风险 ${mediumCount} · 低风险 ${lowCount} · 安全 ${safeCount}`;
+
+  if (total === 0) {
+    els.riskSummaryBar.innerHTML = "";
+    els.riskDetailList.innerHTML = `<p class="empty">暂无片段数据。</p>`;
+    return;
+  }
+
+  els.riskSummaryBar.innerHTML = `
+    <div class="risk-bar-track">
+      ${safeCount > 0 ? `<div class="risk-bar-segment risk-bar-safe" style="width:${(safeCount / total) * 100}%" title="安全 ${safeCount}个"></div>` : ""}
+      ${lowCount > 0 ? `<div class="risk-bar-segment risk-bar-low" style="width:${(lowCount / total) * 100}%" title="低风险 ${lowCount}个"></div>` : ""}
+      ${mediumCount > 0 ? `<div class="risk-bar-segment risk-bar-medium" style="width:${(mediumCount / total) * 100}%" title="中风险 ${mediumCount}个"></div>` : ""}
+      ${highCount > 0 ? `<div class="risk-bar-segment risk-bar-high" style="width:${(highCount / total) * 100}%" title="高风险 ${highCount}个"></div>` : ""}
+    </div>
+    <div class="risk-bar-labels">
+      ${safeCount > 0 ? `<span class="risk-bar-label risk-bar-label-safe">安全 ${safeCount}</span>` : ""}
+      ${lowCount > 0 ? `<span class="risk-bar-label risk-bar-label-low">低 ${lowCount}</span>` : ""}
+      ${mediumCount > 0 ? `<span class="risk-bar-label risk-bar-label-medium">中 ${mediumCount}</span>` : ""}
+      ${highCount > 0 ? `<span class="risk-bar-label risk-bar-label-high">高 ${highCount}</span>` : ""}
+    </div>
+  `;
+
+  const riskyItems = riskResults.filter((r) => r.risk.score > 0).sort((a, b) => b.risk.score - a.risk.score);
+
+  if (riskyItems.length === 0) {
+    els.riskDetailList.innerHTML = `<p class="empty">所有片段均为安全等级，暂无风险项。</p>`;
+    return;
+  }
+
+  els.riskDetailList.innerHTML = riskyItems
+    .map(({ segment, risk }) => {
+      const idx = reel.segments.findIndex((s) => s.id === segment.id) + 1;
+      return `
+        <div class="risk-detail-item ${risk.css}">
+          <div class="risk-detail-head">
+            <strong>${idx}. ${escapeHtml(segment.code)}</strong>
+            <span class="risk-badge ${risk.css}">${risk.label} ${risk.score}分</span>
+          </div>
+          <div class="risk-detail-info">
+            <span class="risk-detail-meta">${formatDuration(segment.duration)} · ${escapeHtml(segment.shift)} · ${escapeHtml(segment.damage)}</span>
+          </div>
+          <div class="risk-detail-reasons">
+            ${risk.reasons.map((r) => `<span class="risk-reason-tag">${escapeHtml(r)}</span>`).join("")}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function renderTemplateSelect() {
@@ -623,6 +711,7 @@ function renderAll() {
   renderList();
   renderTimeline();
   renderWarnings();
+  renderRiskOverview();
   renderTemplates();
   syncAutoChecklist();
   renderChecklist();
@@ -683,12 +772,20 @@ function moveSegment(id, direction) {
 function exportList() {
   const reel = getActiveReel();
   if (!reel) return;
+  const riskSummary = { "安全": 0, "低风险": 0, "中风险": 0, "高风险": 0 };
   const lines = [
     `胶片卷：${reel.title || "未命名胶片卷"}`,
     `总时长：${formatDuration(reel.segments.reduce((sum, item) => sum + Number(item.duration), 0))}`,
-    "",
-    ...reel.segments.map((item, index) => `${index + 1}. ${item.code}｜${formatDuration(item.duration)}｜${item.shift}｜${item.damage}｜${item.note || "无备注"}`)
+    ""
   ];
+  reel.segments.forEach((item, index) => {
+    const risk = calculateSegmentRisk(item);
+    riskSummary[risk.label] = (riskSummary[risk.label] || 0) + 1;
+    const riskStr = `[${risk.label} ${risk.score}分${risk.reasons.length > 0 ? "｜" + risk.reasons.join("；") : ""}]`;
+    lines.push(`${index + 1}. ${item.code}｜${formatDuration(item.duration)}｜${item.shift}｜${item.damage}｜${riskStr}｜${item.note || "无备注"}`);
+  });
+  lines.push("");
+  lines.push(`风险概览：安全 ${riskSummary["安全"]} · 低风险 ${riskSummary["低风险"]} · 中风险 ${riskSummary["中风险"]} · 高风险 ${riskSummary["高风险"]}`);
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
@@ -742,6 +839,21 @@ function populateDrawer(segment) {
   } else {
     els.drawerThumb.innerHTML = `<div class="film-placeholder" style="background:${fallbackThumbs[realIndex % fallbackThumbs.length]}">${escapeHtml(segment.code)}</div>`;
   }
+
+  const risk = calculateSegmentRisk(segment);
+  const riskHtml = `
+    <div class="drawer-risk-info ${risk.css}">
+      <div class="drawer-risk-head">
+        <span class="risk-badge ${risk.css}">${risk.label} ${risk.score}分</span>
+      </div>
+      ${risk.reasons.length > 0 ? `<div class="drawer-risk-reasons">${risk.reasons.map((r) => `<span class="risk-reason-tag">${escapeHtml(r)}</span>`).join("")}</div>` : ""}
+    </div>
+  `;
+
+  const existingRiskInfo = els.drawerForm.querySelector(".drawer-risk-info");
+  if (existingRiskInfo) existingRiskInfo.remove();
+
+  els.drawerForm.insertAdjacentHTML("afterbegin", riskHtml);
 
   els.drawerCode.value = segment.code;
   els.drawerDuration.value = segment.duration;
