@@ -220,7 +220,9 @@ const els = {
   importPreviewStats: document.querySelector("#importPreviewStats"),
   importPreviewBody: document.querySelector("#importPreviewBody"),
   importConfirmBtn: document.querySelector("#importConfirmBtn"),
-  importCancelBtn: document.querySelector("#importCancelBtn")
+  importCancelBtn: document.querySelector("#importCancelBtn"),
+  timelineBar: document.querySelector("#timelineBar"),
+  timelineFilterHint: document.querySelector("#timelineFilterHint")
 };
 
 function getFilteredSegments() {
@@ -549,10 +551,54 @@ function renderReelList() {
       .join("") || `<div class="reel-card-empty">还没有胶片卷，请在上方新建。</div>`;
 }
 
+function shiftToColor(shift) {
+  const map = { "正常": "#347d89", "偏红": "#b54d48", "偏青": "#3ea5a0", "偏黄": "#c9a84c", "褪色": "#8a8580" };
+  return map[shift] || "#347d89";
+}
+
+function renderTimeline() {
+  const reel = getActiveReel();
+  if (!reel || reel.segments.length === 0) {
+    els.timelineBar.innerHTML = `<p class="empty">暂无片段，无法绘制时间轴。</p>`;
+    els.timelineFilterHint.textContent = "";
+    return;
+  }
+
+  const filtered = getFilteredSegments();
+  const filteredIds = new Set(filtered.map((s) => s.id));
+  const totalDuration = reel.segments.reduce((sum, s) => sum + Number(s.duration), 0);
+  const visibleDuration = reel.segments.filter((s) => filteredIds.has(s.id)).reduce((sum, s) => sum + Number(s.duration), 0);
+  const hiddenDuration = totalDuration - visibleDuration;
+  const isFiltering = els.colorFilter.value !== "all" || els.searchInput.value.trim() !== "";
+
+  if (isFiltering && hiddenDuration > 0) {
+    els.timelineFilterHint.textContent = `可见 ${formatDuration(visibleDuration)} · 隐藏 ${formatDuration(hiddenDuration)} · 差 ${formatDuration(hiddenDuration)}`;
+  } else {
+    els.timelineFilterHint.textContent = "";
+  }
+
+  const minPx = 32;
+  const scale = totalDuration > 0 ? Math.max(minPx, 600 / reel.segments.length) / (totalDuration / reel.segments.length) : 0;
+
+  els.timelineBar.innerHTML = reel.segments
+    .map((seg) => {
+      const visible = filteredIds.has(seg.id);
+      const widthPx = Math.max(minPx, Number(seg.duration) * scale);
+      const bg = shiftToColor(seg.shift);
+      const hasDamage = seg.damage !== "完好";
+      const opacityClass = isFiltering && !visible ? "timeline-dimmed" : "timeline-visible";
+      const damageClass = hasDamage ? "timeline-damaged" : "";
+      const idx = reel.segments.findIndex((s) => s.id === seg.id) + 1;
+      return `<div class="timeline-block ${opacityClass} ${damageClass}" style="width:${widthPx}px;background:${bg}" data-timeline-id="${seg.id}" title="${idx}. ${escapeHtml(seg.code)} · ${formatDuration(seg.duration)} · ${escapeHtml(seg.shift)} · ${escapeHtml(seg.damage)}${isFiltering && !visible ? " [已隐藏]" : ""}"><span class="timeline-block-code">${escapeHtml(seg.code)}</span>${hasDamage ? `<span class="timeline-damage-icon">⚠</span>` : ""}</div>`;
+    })
+    .join("");
+}
+
 function renderAll() {
   renderReelHeader();
   renderStats();
   renderList();
+  renderTimeline();
   renderWarnings();
   renderTemplates();
   syncAutoChecklist();
@@ -851,8 +897,8 @@ els.reelTitle.addEventListener("input", () => {
   }
 });
 
-els.colorFilter.addEventListener("change", renderList);
-els.searchInput.addEventListener("input", renderList);
+els.colorFilter.addEventListener("change", () => { renderList(); renderTimeline(); });
+els.searchInput.addEventListener("input", () => { renderList(); renderTimeline(); });
 els.segmentForm.addEventListener("submit", addSegment);
 els.exportBtn.addEventListener("click", exportList);
 
@@ -927,6 +973,11 @@ els.templateList.addEventListener("click", (event) => {
   const deleteBtn = event.target.closest("[data-delete-template]");
   if (applyBtn) applyTemplate(applyBtn.dataset.applyTemplate);
   if (deleteBtn) deleteTemplate(deleteBtn.dataset.deleteTemplate);
+});
+
+els.timelineBar.addEventListener("click", (event) => {
+  const block = event.target.closest("[data-timeline-id]");
+  if (block) openDrawer(block.dataset.timelineId);
 });
 
 els.checklistForm.addEventListener("submit", addChecklistItem);

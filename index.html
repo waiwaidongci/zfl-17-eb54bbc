@@ -172,6 +172,25 @@
           <div id="segmentList" class="segment-list"></div>
         </section>
 
+        <section class="panel timeline-panel">
+          <div class="panel-head">
+            <h2>分镜条时间轴</h2>
+            <span id="timelineFilterHint"></span>
+          </div>
+          <p class="panel-hint">横向展示每个片段的相对长度与状态。色块宽度对应秒数，边框标记破损，筛选时对比可见与隐藏片段的总时长差异。</p>
+          <div class="timeline-scroll">
+            <div id="timelineBar" class="timeline-bar"></div>
+          </div>
+          <div class="timeline-legend">
+            <span class="legend-item"><span class="legend-dot" style="background:var(--cyan)"></span>正常</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>偏红</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#3ea5a0"></span>偏青</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#c9a84c"></span>偏黄</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#8a8580"></span>褪色</span>
+            <span class="legend-item"><span class="legend-dot damage-legend-dot"></span>破损</span>
+          </div>
+        </section>
+
         <aside class="panel warning-panel">
           <div class="panel-head">
             <h2>问题片段概览</h2>
