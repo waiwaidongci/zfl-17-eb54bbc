@@ -52,9 +52,22 @@
         <button id="exportBtn">导出清单</button>
       </section>
 
-      <section class="layout">
+      <section class="layout layout-with-templates">
         <aside class="panel">
-          <h2>录入片段</h2>
+          <div class="panel-head">
+            <h2>录入片段</h2>
+          </div>
+          <div class="template-picker">
+            <label>
+              套用片段模板
+              <div class="template-row">
+                <select id="templateSelect">
+                  <option value="">— 选择模板 —</option>
+                </select>
+                <button type="button" id="applyTemplateBtn" title="套用模板">套用</button>
+              </div>
+            </label>
+          </div>
           <form id="segmentForm" class="segment-form">
             <label>
               片段编号
@@ -94,6 +107,49 @@
             </label>
             <button class="primary" type="submit">加入放映清单</button>
           </form>
+        </aside>
+
+        <aside class="panel template-panel">
+          <div class="panel-head">
+            <h2>片段模板</h2>
+            <span id="templateCount">0 个</span>
+          </div>
+          <form id="templateForm" class="template-form">
+            <label>
+              模板名称
+              <input id="templateNameInput" required placeholder="例：破损近景片" />
+            </label>
+            <label>
+              默认时长秒数
+              <input id="templateDurationInput" required type="number" min="1" value="12" />
+            </label>
+            <label>
+              颜色偏移
+              <select id="templateShiftInput">
+                <option value="正常">正常</option>
+                <option value="偏红">偏红</option>
+                <option value="偏青">偏青</option>
+                <option value="偏黄">偏黄</option>
+                <option value="褪色">褪色</option>
+              </select>
+            </label>
+            <label>
+              破损情况
+              <select id="templateDamageInput">
+                <option value="完好">完好</option>
+                <option value="轻微划痕">轻微划痕</option>
+                <option value="齿孔破损">齿孔破损</option>
+                <option value="接片松动">接片松动</option>
+                <option value="需跳过">需跳过</option>
+              </select>
+            </label>
+            <label>
+              备注前缀
+              <input id="templateNoteInput" placeholder="例：【留意】" />
+            </label>
+            <button class="primary" type="submit">保存为新模板</button>
+          </form>
+          <div id="templateList" class="template-list"></div>
         </aside>
 
         <section class="panel list-panel">

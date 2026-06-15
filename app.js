@@ -32,6 +32,24 @@ const defaultState = {
       note: "接片位置靠近段尾，放映前建议重新压平。",
       thumb: ""
     }
+  ],
+  templates: [
+    {
+      id: crypto.randomUUID(),
+      name: "常规完好片",
+      duration: 12,
+      shift: "正常",
+      damage: "完好",
+      notePrefix: ""
+    },
+    {
+      id: crypto.randomUUID(),
+      name: "轻微划痕旧片",
+      duration: 10,
+      shift: "偏红",
+      damage: "轻微划痕",
+      notePrefix: "【旧片】"
+    }
   ]
 };
 
@@ -54,7 +72,17 @@ const els = {
   totalDuration: document.querySelector("#totalDuration"),
   damageCount: document.querySelector("#damageCount"),
   segmentCount: document.querySelector("#segmentCount"),
-  exportBtn: document.querySelector("#exportBtn")
+  exportBtn: document.querySelector("#exportBtn"),
+  templateSelect: document.querySelector("#templateSelect"),
+  applyTemplateBtn: document.querySelector("#applyTemplateBtn"),
+  templateForm: document.querySelector("#templateForm"),
+  templateNameInput: document.querySelector("#templateNameInput"),
+  templateDurationInput: document.querySelector("#templateDurationInput"),
+  templateShiftInput: document.querySelector("#templateShiftInput"),
+  templateDamageInput: document.querySelector("#templateDamageInput"),
+  templateNoteInput: document.querySelector("#templateNoteInput"),
+  templateList: document.querySelector("#templateList"),
+  templateCount: document.querySelector("#templateCount")
 };
 
 function loadState() {
@@ -144,12 +172,86 @@ function renderWarnings() {
       .join("") || `<p class="empty">当前清单没有颜色偏移或破损提醒。</p>`;
 }
 
+function renderTemplateSelect() {
+  els.templateSelect.innerHTML =
+    `<option value="">— 选择模板 —</option>` +
+    state.templates
+      .map((tpl) => `<option value="${tpl.id}">${escapeHtml(tpl.name)}</option>`)
+      .join("");
+}
+
+function renderTemplateList() {
+  els.templateCount.textContent = `${state.templates.length} 个`;
+  els.templateList.innerHTML =
+    state.templates
+      .map((tpl) => {
+        const hasDamage = tpl.damage !== "完好";
+        return `
+          <div class="template-card" data-id="${tpl.id}">
+            <div class="template-card-head">
+              <strong>${escapeHtml(tpl.name)}</strong>
+              <button type="button" class="template-delete" title="删除模板" data-delete-template="${tpl.id}">×</button>
+            </div>
+            <div class="tag-row">
+              <span class="tag">${formatDuration(tpl.duration)}</span>
+              <span class="tag">${escapeHtml(tpl.shift)}</span>
+              <span class="tag ${hasDamage ? "damage" : "ok"}">${escapeHtml(tpl.damage)}</span>
+            </div>
+            ${tpl.notePrefix ? `<p class="template-note">前缀：${escapeHtml(tpl.notePrefix)}</p>` : ""}
+            <button type="button" class="template-apply" data-apply-template="${tpl.id}">一键套用</button>
+          </div>
+        `;
+      })
+      .join("") || `<p class="empty">还没有模板，先在上方创建一个吧。</p>`;
+}
+
+function renderTemplates() {
+  renderTemplateSelect();
+  renderTemplateList();
+}
+
+function applyTemplate(templateId) {
+  const tpl = state.templates.find((t) => t.id === templateId);
+  if (!tpl) return;
+  els.durationInput.value = tpl.duration;
+  els.shiftInput.value = tpl.shift;
+  els.damageInput.value = tpl.damage;
+  if (tpl.notePrefix && !els.noteInput.value.startsWith(tpl.notePrefix)) {
+    els.noteInput.value = tpl.notePrefix + els.noteInput.value;
+  } else if (tpl.notePrefix && !els.noteInput.value) {
+    els.noteInput.value = tpl.notePrefix;
+  }
+}
+
+function addTemplate(event) {
+  event.preventDefault();
+  const name = els.templateNameInput.value.trim();
+  if (!name) return;
+  state.templates.push({
+    id: crypto.randomUUID(),
+    name,
+    duration: Number(els.templateDurationInput.value),
+    shift: els.templateShiftInput.value,
+    damage: els.templateDamageInput.value,
+    notePrefix: els.templateNoteInput.value.trim()
+  });
+  els.templateForm.reset();
+  els.templateDurationInput.value = 12;
+  renderAll();
+}
+
+function deleteTemplate(id) {
+  state.templates = state.templates.filter((t) => t.id !== id);
+  renderAll();
+}
+
 function renderAll() {
   saveState();
   els.reelTitle.value = state.reelTitle;
   renderStats();
   renderList();
   renderWarnings();
+  renderTemplates();
 }
 
 function formatDuration(seconds) {
@@ -266,6 +368,25 @@ els.segmentList.addEventListener("dragover", (event) => {
   const [item] = state.segments.splice(fromIndex, 1);
   state.segments.splice(toIndex, 0, item);
   renderAll();
+});
+
+els.applyTemplateBtn.addEventListener("click", () => {
+  const id = els.templateSelect.value;
+  if (id) applyTemplate(id);
+});
+
+els.templateSelect.addEventListener("change", () => {
+  const id = els.templateSelect.value;
+  if (id) applyTemplate(id);
+});
+
+els.templateForm.addEventListener("submit", addTemplate);
+
+els.templateList.addEventListener("click", (event) => {
+  const applyBtn = event.target.closest("[data-apply-template]");
+  const deleteBtn = event.target.closest("[data-delete-template]");
+  if (applyBtn) applyTemplate(applyBtn.dataset.applyTemplate);
+  if (deleteBtn) deleteTemplate(deleteBtn.dataset.deleteTemplate);
 });
 
 renderAll();
