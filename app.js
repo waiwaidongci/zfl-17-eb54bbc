@@ -2,57 +2,151 @@ const storageKey = "zfl17-film-strip-desk";
 
 const fallbackThumbs = ["#d49b35", "#347d89", "#b54d48", "#4d7656", "#6d6378"];
 
-const defaultState = {
-  reelTitle: "春日试映A卷",
-  segments: [
-    {
-      id: crypto.randomUUID(),
-      code: "A-001",
-      duration: 18,
-      shift: "正常",
-      damage: "完好",
-      note: "开场街景，节奏平稳，适合保留原顺序。",
-      thumb: ""
-    },
-    {
-      id: crypto.randomUUID(),
-      code: "A-006",
-      duration: 9,
-      shift: "偏红",
-      damage: "轻微划痕",
-      note: "人物近景左侧有划痕，试映时留意是否明显。",
-      thumb: ""
-    },
-    {
-      id: crypto.randomUUID(),
-      code: "A-012",
-      duration: 14,
-      shift: "褪色",
-      damage: "接片松动",
-      note: "接片位置靠近段尾，放映前建议重新压平。",
-      thumb: ""
-    }
-  ],
-  templates: [
-    {
-      id: crypto.randomUUID(),
-      name: "常规完好片",
-      duration: 12,
-      shift: "正常",
-      damage: "完好",
-      notePrefix: ""
-    },
-    {
-      id: crypto.randomUUID(),
-      name: "轻微划痕旧片",
-      duration: 10,
-      shift: "偏红",
-      damage: "轻微划痕",
-      notePrefix: "【旧片】"
-    }
-  ],
-  checklist: []
-};
+function createDefaultReel(title = "春日试映A卷") {
+  return {
+    id: crypto.randomUUID(),
+    title,
+    createdAt: Date.now(),
+    segments: [
+      {
+        id: crypto.randomUUID(),
+        code: "A-001",
+        duration: 18,
+        shift: "正常",
+        damage: "完好",
+        note: "开场街景，节奏平稳，适合保留原顺序。",
+        thumb: ""
+      },
+      {
+        id: crypto.randomUUID(),
+        code: "A-006",
+        duration: 9,
+        shift: "偏红",
+        damage: "轻微划痕",
+        note: "人物近景左侧有划痕，试映时留意是否明显。",
+        thumb: ""
+      },
+      {
+        id: crypto.randomUUID(),
+        code: "A-012",
+        duration: 14,
+        shift: "褪色",
+        damage: "接片松动",
+        note: "接片位置靠近段尾，放映前建议重新压平。",
+        thumb: ""
+      }
+    ],
+    checklist: []
+  };
+}
+
+const defaultTemplates = [
+  {
+    id: crypto.randomUUID(),
+    name: "常规完好片",
+    duration: 12,
+    shift: "正常",
+    damage: "完好",
+    notePrefix: ""
+  },
+  {
+    id: crypto.randomUUID(),
+    name: "轻微划痕旧片",
+    duration: 10,
+    shift: "偏红",
+    damage: "轻微划痕",
+    notePrefix: "【旧片】"
+  }
+];
+
+function createDefaultWorkspace() {
+  const firstReel = createDefaultReel("春日试映A卷");
+  return {
+    version: 2,
+    activeReelId: firstReel.id,
+    reels: [firstReel],
+    templates: structuredClone(defaultTemplates)
+  };
+}
+
+function migrateLegacyState(saved) {
+  if (!saved) return null;
+  if (saved.version === 2 && Array.isArray(saved.reels)) return null;
+
+  const migrated = createDefaultWorkspace();
+  const legacyReel = migrated.reels[0];
+
+  if (typeof saved.reelTitle === "string") {
+    legacyReel.title = saved.reelTitle || "未命名胶片卷";
+  }
+  if (Array.isArray(saved.segments)) {
+    legacyReel.segments = saved.segments.map((seg) => ({
+      ...seg,
+      id: seg.id || crypto.randomUUID()
+    }));
+  }
+  if (Array.isArray(saved.checklist)) {
+    legacyReel.checklist = saved.checklist.map((item) => ({
+      ...item,
+      id: item.id || crypto.randomUUID()
+    }));
+  }
+  if (Array.isArray(saved.templates)) {
+    migrated.templates = saved.templates.map((tpl) => ({
+      ...tpl,
+      id: tpl.id || crypto.randomUUID()
+    }));
+  }
+  migrated.activeReelId = legacyReel.id;
+
+  return migrated;
+}
+
+function loadState() {
+  const saved = localStorage.getItem(storageKey);
+  if (!saved) return createDefaultWorkspace();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(saved);
+  } catch {
+    return createDefaultWorkspace();
+  }
+
+  const migrated = migrateLegacyState(parsed);
+  if (migrated) return migrated;
+
+  if (!Array.isArray(parsed.reels) || parsed.reels.length === 0) {
+    return createDefaultWorkspace();
+  }
+
+  const validIds = parsed.reels.map((r) => r.id);
+  if (!validIds.includes(parsed.activeReelId)) {
+    parsed.activeReelId = validIds[0];
+  }
+
+  const defaults = createDefaultWorkspace();
+  return {
+    ...defaults,
+    ...parsed,
+    templates: Array.isArray(parsed.templates) && parsed.templates.length > 0
+      ? parsed.templates
+      : defaults.templates
+  };
+}
+
+function saveState() {
+  localStorage.setItem(storageKey, JSON.stringify(state));
+}
+
+function getActiveReel() {
+  let reel = state.reels.find((r) => r.id === state.activeReelId);
+  if (!reel && state.reels.length > 0) {
+    reel = state.reels[0];
+    state.activeReelId = reel.id;
+  }
+  return reel;
+}
 
 let state = loadState();
 let draggedId = null;
@@ -60,6 +154,17 @@ let activeDrawerSegmentId = null;
 let drawerThumbDataUrl = "";
 
 const els = {
+  reelSwitcherBtn: document.querySelector("#reelSwitcherBtn"),
+  activeReelName: document.querySelector("#activeReelName"),
+  reelCountBadge: document.querySelector("#reelCountBadge"),
+  reelModalBackdrop: document.querySelector("#reelModalBackdrop"),
+  reelModal: document.querySelector("#reelModal"),
+  reelModalClose: document.querySelector("#reelModalClose"),
+  createReelBtn: document.querySelector("#createReelBtn"),
+  newReelNameInput: document.querySelector("#newReelNameInput"),
+  reelList: document.querySelector("#reelList"),
+  reelListTip: document.querySelector("#reelListTip"),
+
   reelTitle: document.querySelector("#reelTitle"),
   colorFilter: document.querySelector("#colorFilter"),
   searchInput: document.querySelector("#searchInput"),
@@ -105,24 +210,12 @@ const els = {
   drawerDelete: document.querySelector("#drawerDelete")
 };
 
-function loadState() {
-  const saved = localStorage.getItem(storageKey);
-  if (!saved) return structuredClone(defaultState);
-  try {
-    return { ...structuredClone(defaultState), ...JSON.parse(saved) };
-  } catch {
-    return structuredClone(defaultState);
-  }
-}
-
-function saveState() {
-  localStorage.setItem(storageKey, JSON.stringify(state));
-}
-
 function getFilteredSegments() {
+  const reel = getActiveReel();
+  if (!reel) return [];
   const color = els.colorFilter.value;
   const keyword = els.searchInput.value.trim();
-  return state.segments.filter((item) => {
+  return reel.segments.filter((item) => {
     const matchesColor = color === "all" || item.shift === color;
     const matchesKeyword = !keyword || `${item.code}${item.note}${item.damage}`.includes(keyword);
     return matchesColor && matchesKeyword;
@@ -130,19 +223,40 @@ function getFilteredSegments() {
 }
 
 function renderStats() {
-  const total = state.segments.reduce((sum, item) => sum + Number(item.duration), 0);
-  const damaged = state.segments.filter((item) => item.damage !== "完好").length;
+  const reel = getActiveReel();
+  if (!reel) {
+    els.totalDuration.textContent = "0:00";
+    els.damageCount.textContent = "0";
+    els.segmentCount.textContent = "0";
+    return;
+  }
+  const total = reel.segments.reduce((sum, item) => sum + Number(item.duration), 0);
+  const damaged = reel.segments.filter((item) => item.damage !== "完好").length;
   els.totalDuration.textContent = formatDuration(total);
   els.damageCount.textContent = damaged;
-  els.segmentCount.textContent = state.segments.length;
+  els.segmentCount.textContent = reel.segments.length;
+}
+
+function renderReelHeader() {
+  const reel = getActiveReel();
+  els.activeReelName.textContent = reel ? reel.title : "—";
+  els.reelCountBadge.textContent = `${state.reels.length} 卷`;
+  if (reel) {
+    els.reelTitle.value = reel.title;
+  }
 }
 
 function renderList() {
+  const reel = getActiveReel();
+  if (!reel) {
+    els.segmentList.innerHTML = `<p class="empty">没有胶片卷。</p>`;
+    return;
+  }
   const segments = getFilteredSegments();
   els.segmentList.innerHTML =
     segments
-      .map((item, index) => {
-        const realIndex = state.segments.findIndex((segment) => segment.id === item.id);
+      .map((item) => {
+        const realIndex = reel.segments.findIndex((segment) => segment.id === item.id);
         const hasDamage = item.damage !== "完好";
         return `
           <article class="segment-card" draggable="true" data-id="${item.id}" data-view="${item.id}" title="点击查看详情">
@@ -176,11 +290,16 @@ function renderList() {
 }
 
 function renderWarnings() {
-  const warnings = state.segments.filter((item) => item.damage !== "完好" || item.shift !== "正常");
+  const reel = getActiveReel();
+  if (!reel) {
+    els.warningList.innerHTML = `<p class="empty">当前没有胶片卷。</p>`;
+    return;
+  }
+  const warnings = reel.segments.filter((item) => item.damage !== "完好" || item.shift !== "正常");
   els.warningList.innerHTML =
     warnings
       .map((item) => {
-        const index = state.segments.findIndex((segment) => segment.id === item.id) + 1;
+        const index = reel.segments.findIndex((segment) => segment.id === item.id) + 1;
         const reasons = [item.shift !== "正常" ? item.shift : "", item.damage !== "完好" ? item.damage : ""].filter(Boolean).join(" · ");
         return `
           <div class="warning-item">
@@ -266,11 +385,13 @@ function deleteTemplate(id) {
 }
 
 function syncAutoChecklist() {
-  const problemSegments = state.segments.filter(
+  const reel = getActiveReel();
+  if (!reel) return;
+  const problemSegments = reel.segments.filter(
     (seg) => seg.damage !== "完好" || seg.shift !== "正常"
   );
   const existingAutoMap = {};
-  state.checklist
+  reel.checklist
     .filter((item) => item.source === "auto")
     .forEach((item) => {
       existingAutoMap[item.segmentId] = item;
@@ -292,15 +413,17 @@ function syncAutoChecklist() {
       });
     }
   });
-  const manualItems = state.checklist.filter((item) => item.source === "manual");
-  state.checklist = [...syncedAutoItems, ...manualItems];
+  const manualItems = reel.checklist.filter((item) => item.source === "manual");
+  reel.checklist = [...syncedAutoItems, ...manualItems];
 }
 
 function addChecklistItem(event) {
   event.preventDefault();
+  const reel = getActiveReel();
+  if (!reel) return;
   const text = els.checklistInput.value.trim();
   if (!text) return;
-  state.checklist.push({
+  reel.checklist.push({
     id: crypto.randomUUID(),
     text,
     source: "manual",
@@ -312,21 +435,32 @@ function addChecklistItem(event) {
 }
 
 function toggleChecklistItem(id) {
-  const item = state.checklist.find((c) => c.id === id);
+  const reel = getActiveReel();
+  if (!reel) return;
+  const item = reel.checklist.find((c) => c.id === id);
   if (item) item.completed = !item.completed;
   renderAll();
 }
 
 function deleteChecklistItem(id) {
-  state.checklist = state.checklist.filter((c) => c.id !== id);
+  const reel = getActiveReel();
+  if (!reel) return;
+  reel.checklist = reel.checklist.filter((c) => c.id !== id);
   renderAll();
 }
 
 function renderChecklist() {
-  const autoItems = state.checklist.filter((item) => item.source === "auto");
-  const manualItems = state.checklist.filter((item) => item.source === "manual");
-  const completed = state.checklist.filter((item) => item.completed).length;
-  const total = state.checklist.length;
+  const reel = getActiveReel();
+  if (!reel) {
+    els.checklistStats.textContent = "0 / 0 项已完成";
+    els.autoChecklist.innerHTML = `<p class="empty">无胶片卷。</p>`;
+    els.manualChecklist.innerHTML = `<p class="empty">无胶片卷。</p>`;
+    return;
+  }
+  const autoItems = reel.checklist.filter((item) => item.source === "auto");
+  const manualItems = reel.checklist.filter((item) => item.source === "manual");
+  const completed = reel.checklist.filter((item) => item.completed).length;
+  const total = reel.checklist.length;
   els.checklistStats.textContent = `${completed} / ${total} 项已完成`;
 
   els.autoChecklist.innerHTML =
@@ -364,14 +498,53 @@ function renderChecklist() {
       .join("") || `<p class="empty">暂无临时检查项，可在上方输入添加。</p>`;
 }
 
+function renderReelList() {
+  els.reelListTip.textContent = `共 ${state.reels.length} 卷`;
+  els.reelList.innerHTML =
+    state.reels
+      .map((reel) => {
+        const isActive = reel.id === state.activeReelId;
+        const segCount = reel.segments.length;
+        const totalDuration = reel.segments.reduce((sum, s) => sum + Number(s.duration), 0);
+        const date = new Date(reel.createdAt);
+        const dateStr = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
+        return `
+          <div class="reel-card ${isActive ? "active" : ""}" data-reel-id="${reel.id}">
+            <div class="reel-card-indicator" title="${isActive ? "当前工作卷" : "点击切换"}"></div>
+            <div class="reel-card-main">
+              <div class="reel-card-title-row">
+                <span class="reel-card-title" data-reel-title="${reel.id}">${escapeHtml(reel.title)}</span>
+                ${isActive ? `<span class="reel-badge active-badge">当前工作卷</span>` : ""}
+              </div>
+              <div class="reel-card-meta">
+                <span>📽️ ${segCount} 个片段</span>
+                <span>⏱️ ${formatDuration(totalDuration)}</span>
+                <span>📅 ${dateStr}</span>
+              </div>
+            </div>
+            <div class="reel-card-actions">
+              <button type="button" class="reel-action-btn switch-btn" title="${isActive ? "正在使用" : "切换到此卷"}" data-switch-reel="${reel.id}" ${isActive ? "disabled" : ""}>
+                ${isActive ? "✓" : "↻"}
+              </button>
+              <button type="button" class="reel-action-btn" title="重命名" data-rename-reel="${reel.id}">✎</button>
+              <button type="button" class="reel-action-btn" title="复制此卷" data-duplicate-reel="${reel.id}">⎘</button>
+              <button type="button" class="reel-action-btn delete-btn" title="删除此卷" data-delete-reel="${reel.id}">🗑</button>
+            </div>
+          </div>
+        `;
+      })
+      .join("") || `<div class="reel-card-empty">还没有胶片卷，请在上方新建。</div>`;
+}
+
 function renderAll() {
-  els.reelTitle.value = state.reelTitle;
+  renderReelHeader();
   renderStats();
   renderList();
   renderWarnings();
   renderTemplates();
   syncAutoChecklist();
   renderChecklist();
+  renderReelList();
   saveState();
 }
 
@@ -397,8 +570,10 @@ function readFileAsDataUrl(file) {
 
 async function addSegment(event) {
   event.preventDefault();
+  const reel = getActiveReel();
+  if (!reel) return;
   const thumb = await readFileAsDataUrl(els.thumbInput.files[0]);
-  state.segments.push({
+  reel.segments.push({
     id: crypto.randomUUID(),
     code: els.codeInput.value.trim(),
     duration: Number(els.durationInput.value),
@@ -413,25 +588,29 @@ async function addSegment(event) {
 }
 
 function moveSegment(id, direction) {
-  const index = state.segments.findIndex((item) => item.id === id);
+  const reel = getActiveReel();
+  if (!reel) return;
+  const index = reel.segments.findIndex((item) => item.id === id);
   const target = index + direction;
-  if (index < 0 || target < 0 || target >= state.segments.length) return;
-  const [item] = state.segments.splice(index, 1);
-  state.segments.splice(target, 0, item);
+  if (index < 0 || target < 0 || target >= reel.segments.length) return;
+  const [item] = reel.segments.splice(index, 1);
+  reel.segments.splice(target, 0, item);
   renderAll();
 }
 
 function exportList() {
+  const reel = getActiveReel();
+  if (!reel) return;
   const lines = [
-    `胶片卷：${state.reelTitle || "未命名胶片卷"}`,
-    `总时长：${formatDuration(state.segments.reduce((sum, item) => sum + Number(item.duration), 0))}`,
+    `胶片卷：${reel.title || "未命名胶片卷"}`,
+    `总时长：${formatDuration(reel.segments.reduce((sum, item) => sum + Number(item.duration), 0))}`,
     "",
-    ...state.segments.map((item, index) => `${index + 1}. ${item.code}｜${formatDuration(item.duration)}｜${item.shift}｜${item.damage}｜${item.note || "无备注"}`)
+    ...reel.segments.map((item, index) => `${index + 1}. ${item.code}｜${formatDuration(item.duration)}｜${item.shift}｜${item.damage}｜${item.note || "无备注"}`)
   ];
   const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `${state.reelTitle || "film-reel"}-checklist.txt`;
+  link.download = `${reel.title || "film-reel"}-checklist.txt`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -446,7 +625,9 @@ function escapeHtml(value) {
 }
 
 function openDrawer(segmentId) {
-  const segment = state.segments.find((s) => s.id === segmentId);
+  const reel = getActiveReel();
+  if (!reel) return;
+  const segment = reel.segments.find((s) => s.id === segmentId);
   if (!segment) return;
 
   activeDrawerSegmentId = segmentId;
@@ -470,7 +651,9 @@ function closeDrawer() {
 }
 
 function populateDrawer(segment) {
-  const realIndex = state.segments.findIndex((s) => s.id === segment.id);
+  const reel = getActiveReel();
+  if (!reel) return;
+  const realIndex = reel.segments.findIndex((s) => s.id === segment.id);
 
   if (segment.thumb) {
     els.drawerThumb.innerHTML = `<img src="${segment.thumb}" alt="${escapeHtml(segment.code)}缩略图" />`;
@@ -488,9 +671,10 @@ function populateDrawer(segment) {
 
 async function saveDrawerEdits(event) {
   event.preventDefault();
-  if (!activeDrawerSegmentId) return;
+  const reel = getActiveReel();
+  if (!reel || !activeDrawerSegmentId) return;
 
-  const segmentIndex = state.segments.findIndex((s) => s.id === activeDrawerSegmentId);
+  const segmentIndex = reel.segments.findIndex((s) => s.id === activeDrawerSegmentId);
   if (segmentIndex < 0) return;
 
   const file = els.drawerThumbInput.files[0];
@@ -498,8 +682,8 @@ async function saveDrawerEdits(event) {
     drawerThumbDataUrl = await readFileAsDataUrl(file);
   }
 
-  state.segments[segmentIndex] = {
-    ...state.segments[segmentIndex],
+  reel.segments[segmentIndex] = {
+    ...reel.segments[segmentIndex],
     code: els.drawerCode.value.trim(),
     duration: Number(els.drawerDuration.value),
     shift: els.drawerShift.value,
@@ -513,18 +697,147 @@ async function saveDrawerEdits(event) {
 }
 
 function deleteFromDrawer() {
-  if (!activeDrawerSegmentId) return;
+  const reel = getActiveReel();
+  if (!reel || !activeDrawerSegmentId) return;
   if (!confirm("确定要删除此片段吗？此操作不可撤销。")) return;
 
-  state.segments = state.segments.filter((s) => s.id !== activeDrawerSegmentId);
+  reel.segments = reel.segments.filter((s) => s.id !== activeDrawerSegmentId);
   renderAll();
   closeDrawer();
 }
 
-els.reelTitle.addEventListener("input", () => {
-  state.reelTitle = els.reelTitle.value;
-  saveState();
+function openReelModal() {
+  els.reelModal.classList.add("open");
+  els.reelModalBackdrop.classList.add("open");
+  els.reelModal.setAttribute("aria-hidden", "false");
+  els.newReelNameInput.value = "";
+}
+
+function closeReelModal() {
+  els.reelModal.classList.remove("open");
+  els.reelModalBackdrop.classList.remove("open");
+  els.reelModal.setAttribute("aria-hidden", "true");
+  els.newReelNameInput.value = "";
+}
+
+function createReel() {
+  const name = els.newReelNameInput.value.trim();
+  if (!name) {
+    els.newReelNameInput.focus();
+    return;
+  }
+  const newReel = {
+    id: crypto.randomUUID(),
+    title: name,
+    createdAt: Date.now(),
+    segments: [],
+    checklist: []
+  };
+  state.reels.push(newReel);
+  state.activeReelId = newReel.id;
+  els.newReelNameInput.value = "";
+  renderAll();
+}
+
+function switchReel(reelId) {
+  if (!state.reels.find((r) => r.id === reelId)) return;
+  state.activeReelId = reelId;
+  renderAll();
+}
+
+function renameReel(reelId) {
+  const reel = state.reels.find((r) => r.id === reelId);
+  if (!reel) return;
+  const newName = prompt("请输入新的胶片卷名称：", reel.title);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    alert("名称不能为空。");
+    return;
+  }
+  reel.title = trimmed;
+  renderAll();
+}
+
+function duplicateReel(reelId) {
+  const reel = state.reels.find((r) => r.id === reelId);
+  if (!reel) return;
+  const copy = structuredClone(reel);
+  copy.id = crypto.randomUUID();
+  copy.title = `${reel.title} 副本`;
+  copy.createdAt = Date.now();
+  copy.segments = copy.segments.map((seg) => ({ ...seg, id: crypto.randomUUID() }));
+  copy.checklist = copy.checklist.map((item) => ({ ...item, id: crypto.randomUUID() }));
+  state.reels.push(copy);
+  state.activeReelId = copy.id;
+  renderAll();
+}
+
+function deleteReel(reelId) {
+  const reel = state.reels.find((r) => r.id === reelId);
+  if (!reel) return;
+  if (state.reels.length <= 1) {
+    alert("至少需要保留一个胶片卷。");
+    return;
+  }
+  if (!confirm(`确定要删除胶片卷「${reel.title}」吗？此操作不可撤销。`)) return;
+
+  state.reels = state.reels.filter((r) => r.id !== reelId);
+  if (state.activeReelId === reelId) {
+    state.activeReelId = state.reels[0].id;
+  }
+  renderAll();
+}
+
+els.reelSwitcherBtn.addEventListener("click", openReelModal);
+els.reelModalClose.addEventListener("click", closeReelModal);
+els.reelModalBackdrop.addEventListener("click", closeReelModal);
+
+els.createReelBtn.addEventListener("click", createReel);
+els.newReelNameInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    createReel();
+  }
 });
+
+els.reelList.addEventListener("click", (event) => {
+  const switchBtn = event.target.closest("[data-switch-reel]");
+  const renameBtn = event.target.closest("[data-rename-reel]");
+  const duplicateBtn = event.target.closest("[data-duplicate-reel]");
+  const deleteBtn = event.target.closest("[data-delete-reel]");
+  const card = event.target.closest(".reel-card");
+
+  if (switchBtn) {
+    event.stopPropagation();
+    switchReel(switchBtn.dataset.switchReel);
+  } else if (renameBtn) {
+    event.stopPropagation();
+    renameReel(renameBtn.dataset.renameReel);
+  } else if (duplicateBtn) {
+    event.stopPropagation();
+    duplicateReel(duplicateBtn.dataset.duplicateReel);
+  } else if (deleteBtn) {
+    event.stopPropagation();
+    deleteReel(deleteBtn.dataset.deleteReel);
+  } else if (card && card.dataset.reelId) {
+    event.stopPropagation();
+    if (card.dataset.reelId !== state.activeReelId) {
+      switchReel(card.dataset.reelId);
+    }
+  }
+});
+
+els.reelTitle.addEventListener("input", () => {
+  const reel = getActiveReel();
+  if (reel) {
+    reel.title = els.reelTitle.value;
+    renderReelHeader();
+    renderReelList();
+    saveState();
+  }
+});
+
 els.colorFilter.addEventListener("change", renderList);
 els.searchInput.addEventListener("input", renderList);
 els.segmentForm.addEventListener("submit", addSegment);
@@ -546,8 +859,11 @@ els.segmentList.addEventListener("click", (event) => {
   }
   if (remove) {
     event.stopPropagation();
-    state.segments = state.segments.filter((item) => item.id !== remove.dataset.delete);
-    renderAll();
+    const reel = getActiveReel();
+    if (reel) {
+      reel.segments = reel.segments.filter((item) => item.id !== remove.dataset.delete);
+      renderAll();
+    }
   }
   if (view && !up && !down && !remove) {
     openDrawer(view.dataset.view);
@@ -568,14 +884,16 @@ els.segmentList.addEventListener("dragend", (event) => {
 });
 
 els.segmentList.addEventListener("dragover", (event) => {
+  const reel = getActiveReel();
+  if (!reel) return;
   const card = event.target.closest("[data-id]");
   if (!card || !draggedId || card.dataset.id === draggedId) return;
   event.preventDefault();
-  const fromIndex = state.segments.findIndex((item) => item.id === draggedId);
-  const toIndex = state.segments.findIndex((item) => item.id === card.dataset.id);
+  const fromIndex = reel.segments.findIndex((item) => item.id === draggedId);
+  const toIndex = reel.segments.findIndex((item) => item.id === card.dataset.id);
   if (fromIndex < 0 || toIndex < 0) return;
-  const [item] = state.segments.splice(fromIndex, 1);
-  state.segments.splice(toIndex, 0, item);
+  const [item] = reel.segments.splice(fromIndex, 1);
+  reel.segments.splice(toIndex, 0, item);
   renderAll();
 });
 
@@ -626,8 +944,12 @@ els.drawerThumbInput.addEventListener("change", async (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && activeDrawerSegmentId) {
-    closeDrawer();
+  if (event.key === "Escape") {
+    if (activeDrawerSegmentId) {
+      closeDrawer();
+    } else if (els.reelModal.classList.contains("open")) {
+      closeReelModal();
+    }
   }
 });
 

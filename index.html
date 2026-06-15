@@ -9,9 +9,20 @@
   <body>
     <main class="shell">
       <header class="hero">
-        <div>
+        <div class="hero-left">
           <p class="eyebrow">纸质放映胶片整理</p>
           <h1>胶片分镜条核对台</h1>
+          <div class="reel-switcher">
+            <button class="reel-switcher-btn" id="reelSwitcherBtn" title="管理胶片卷">
+              <span class="reel-icon">🎞️</span>
+              <span class="reel-info">
+                <span class="reel-label">当前工作卷</span>
+                <span class="reel-name" id="activeReelName">—</span>
+              </span>
+              <span class="reel-count" id="reelCountBadge">1 卷</span>
+              <span class="reel-arrow">▾</span>
+            </button>
+          </div>
         </div>
         <div class="hero-stats">
           <div>
@@ -198,6 +209,25 @@
         </div>
       </section>
     </main>
+
+    <div class="reel-modal-backdrop" id="reelModalBackdrop"></div>
+    <div class="reel-modal" id="reelModal" aria-hidden="true">
+      <div class="reel-modal-header">
+        <h2>胶片卷工作区</h2>
+        <button type="button" class="reel-modal-close" id="reelModalClose" title="关闭">×</button>
+      </div>
+      <div class="reel-modal-body">
+        <div class="reel-create-row">
+          <input type="text" id="newReelNameInput" placeholder="新胶片卷名称，如：夏夜试映B卷" />
+          <button type="button" class="primary" id="createReelBtn">新建胶片卷</button>
+        </div>
+        <div class="reel-list-header">
+          <span>胶片卷列表</span>
+          <span class="reel-list-tip" id="reelListTip">共 0 卷</span>
+        </div>
+        <div class="reel-list" id="reelList"></div>
+      </div>
+    </div>
 
     <div class="drawer-backdrop" id="drawerBackdrop"></div>
     <aside class="drawer" id="segmentDrawer" aria-hidden="true">
