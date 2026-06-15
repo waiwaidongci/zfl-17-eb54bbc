@@ -567,29 +567,30 @@ function renderTimeline() {
   const filtered = getFilteredSegments();
   const filteredIds = new Set(filtered.map((s) => s.id));
   const totalDuration = reel.segments.reduce((sum, s) => sum + Number(s.duration), 0);
-  const visibleDuration = reel.segments.filter((s) => filteredIds.has(s.id)).reduce((sum, s) => sum + Number(s.duration), 0);
+  const visibleDuration = filtered.reduce((sum, s) => sum + Number(s.duration), 0);
   const hiddenDuration = totalDuration - visibleDuration;
+  const diffDuration = Math.abs(visibleDuration - hiddenDuration);
   const isFiltering = els.colorFilter.value !== "all" || els.searchInput.value.trim() !== "";
 
-  if (isFiltering && hiddenDuration > 0) {
-    els.timelineFilterHint.textContent = `可见 ${formatDuration(visibleDuration)} · 隐藏 ${formatDuration(hiddenDuration)} · 差 ${formatDuration(hiddenDuration)}`;
+  if (isFiltering && (hiddenDuration > 0 || visibleDuration < totalDuration)) {
+    els.timelineFilterHint.textContent = `总 ${formatDuration(totalDuration)} · 可见 ${formatDuration(visibleDuration)} · 隐藏 ${formatDuration(hiddenDuration)} · 差值 ${formatDuration(diffDuration)}`;
   } else {
     els.timelineFilterHint.textContent = "";
   }
 
-  const minPx = 32;
-  const scale = totalDuration > 0 ? Math.max(minPx, 600 / reel.segments.length) / (totalDuration / reel.segments.length) : 0;
+  const pxPerSecond = 14;
+  const minBlockPx = 56;
 
   els.timelineBar.innerHTML = reel.segments
     .map((seg) => {
       const visible = filteredIds.has(seg.id);
-      const widthPx = Math.max(minPx, Number(seg.duration) * scale);
+      const widthPx = Math.max(minBlockPx, Number(seg.duration) * pxPerSecond);
       const bg = shiftToColor(seg.shift);
       const hasDamage = seg.damage !== "完好";
       const opacityClass = isFiltering && !visible ? "timeline-dimmed" : "timeline-visible";
       const damageClass = hasDamage ? "timeline-damaged" : "";
       const idx = reel.segments.findIndex((s) => s.id === seg.id) + 1;
-      return `<div class="timeline-block ${opacityClass} ${damageClass}" style="width:${widthPx}px;background:${bg}" data-timeline-id="${seg.id}" title="${idx}. ${escapeHtml(seg.code)} · ${formatDuration(seg.duration)} · ${escapeHtml(seg.shift)} · ${escapeHtml(seg.damage)}${isFiltering && !visible ? " [已隐藏]" : ""}"><span class="timeline-block-code">${escapeHtml(seg.code)}</span>${hasDamage ? `<span class="timeline-damage-icon">⚠</span>` : ""}</div>`;
+      return `<div class="timeline-block ${opacityClass} ${damageClass}" style="width:${widthPx}px;background:${bg}" data-timeline-id="${seg.id}" title="${idx}. ${escapeHtml(seg.code)} · ${formatDuration(seg.duration)} · ${escapeHtml(seg.shift)} · ${escapeHtml(seg.damage)}${isFiltering && !visible ? " [已隐藏]" : ""}"><span class="timeline-block-code">${escapeHtml(seg.code)}</span>${hasDamage ? `<span class="timeline-damage-icon">⚠</span>` : ""}<span class="timeline-duration">${formatDuration(seg.duration)}</span></div>`;
     })
     .join("");
 }
