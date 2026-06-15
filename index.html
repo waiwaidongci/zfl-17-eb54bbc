@@ -61,6 +61,7 @@
           <input id="searchInput" type="search" placeholder="片段编号或备注" />
         </label>
         <button id="exportBtn">导出清单</button>
+        <button id="importBtn">批量导入</button>
       </section>
 
       <section class="layout layout-with-templates">
@@ -285,6 +286,54 @@
         </form>
       </div>
     </aside>
+
+    <div class="import-modal-backdrop" id="importModalBackdrop"></div>
+    <div class="import-modal" id="importModal" aria-hidden="true">
+      <div class="import-modal-header">
+        <h2>批量导入片段清单</h2>
+        <button type="button" class="import-modal-close" id="importModalClose" title="关闭">×</button>
+      </div>
+      <div class="import-modal-body">
+        <p class="panel-hint">粘贴 CSV 文本或上传 CSV 文件，预览确认后写入当前放映清单。CSV 列顺序：片段编号, 秒数, 颜色偏移, 破损情况, 备注。</p>
+        <div class="import-input-row">
+          <textarea id="importCsvText" rows="8" placeholder="粘贴 CSV 内容，每行一条片段&#10;例：A-015,12,正常,完好,街景长镜头"></textarea>
+          <div class="import-file-col">
+            <label class="import-file-label">
+              <input type="file" id="importCsvFile" accept=".csv,.txt" />
+              <span>上传 CSV 文件</span>
+            </label>
+            <button type="button" class="primary" id="importParseBtn">解析预览</button>
+          </div>
+        </div>
+        <div class="import-errors" id="importErrors" style="display:none"></div>
+        <div class="import-preview-wrap" id="importPreviewWrap" style="display:none">
+          <div class="import-preview-head">
+            <h3>解析预览</h3>
+            <span id="importPreviewStats"></span>
+          </div>
+          <div class="import-preview-scroll">
+            <table class="import-preview-table" id="importPreviewTable">
+              <thead>
+                <tr>
+                  <th>行号</th>
+                  <th>片段编号</th>
+                  <th>秒数</th>
+                  <th>颜色偏移</th>
+                  <th>破损情况</th>
+                  <th>备注</th>
+                  <th>状态</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewBody"></tbody>
+            </table>
+          </div>
+          <div class="import-actions">
+            <button type="button" class="primary" id="importConfirmBtn" disabled>确认导入有效行</button>
+            <button type="button" id="importCancelBtn">取消</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <script src="app.js"></script>
   </body>

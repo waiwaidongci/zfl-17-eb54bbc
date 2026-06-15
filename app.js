@@ -207,7 +207,20 @@ const els = {
   drawerShift: document.querySelector("#drawerShift"),
   drawerDamage: document.querySelector("#drawerDamage"),
   drawerNote: document.querySelector("#drawerNote"),
-  drawerDelete: document.querySelector("#drawerDelete")
+  drawerDelete: document.querySelector("#drawerDelete"),
+  importBtn: document.querySelector("#importBtn"),
+  importModalBackdrop: document.querySelector("#importModalBackdrop"),
+  importModal: document.querySelector("#importModal"),
+  importModalClose: document.querySelector("#importModalClose"),
+  importCsvText: document.querySelector("#importCsvText"),
+  importCsvFile: document.querySelector("#importCsvFile"),
+  importParseBtn: document.querySelector("#importParseBtn"),
+  importErrors: document.querySelector("#importErrors"),
+  importPreviewWrap: document.querySelector("#importPreviewWrap"),
+  importPreviewStats: document.querySelector("#importPreviewStats"),
+  importPreviewBody: document.querySelector("#importPreviewBody"),
+  importConfirmBtn: document.querySelector("#importConfirmBtn"),
+  importCancelBtn: document.querySelector("#importCancelBtn")
 };
 
 function getFilteredSegments() {
@@ -943,9 +956,292 @@ els.drawerThumbInput.addEventListener("change", async (event) => {
   }
 });
 
+const validShifts = ["正常", "偏红", "偏青", "偏黄", "褪色"];
+const validDamages = ["完好", "轻微划痕", "齿孔破损", "接片松动", "需跳过"];
+let importParsedRows = [];
+
+function openImportModal() {
+  els.importModal.classList.add("open");
+  els.importModalBackdrop.classList.add("open");
+  els.importModal.setAttribute("aria-hidden", "false");
+  els.importCsvText.value = "";
+  els.importCsvFile.value = "";
+  els.importErrors.style.display = "none";
+  els.importPreviewWrap.style.display = "none";
+  els.importConfirmBtn.disabled = true;
+  importParsedRows = [];
+}
+
+function closeImportModal() {
+  els.importModal.classList.remove("open");
+  els.importModalBackdrop.classList.remove("open");
+  els.importModal.setAttribute("aria-hidden", "true");
+  importParsedRows = [];
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ",") {
+        result.push(current.trim());
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsvText(text) {
+  const lines = text.split(/\r?\n/);
+  const rows = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i].trim();
+    if (!raw) continue;
+    const fields = parseCsvLine(raw);
+    if (fields.length === 1 && fields[0].toLowerCase() === "片段编号") continue;
+    if (fields.length === 5 || fields.length === 4) {
+      rows.push({ lineNum: i + 1, raw, fields });
+    } else {
+      rows.push({ lineNum: i + 1, raw, fields, parseError: "列数不符（需4或5列）" });
+    }
+  }
+  return rows;
+}
+
+function validateImportRows(rows) {
+  const reel = getActiveReel();
+  const existingCodes = reel ? reel.segments.map((s) => s.code) : [];
+  const codeCountMap = {};
+  const validated = [];
+
+  for (const row of rows) {
+    const errors = [];
+    const isParseError = !!row.parseError;
+
+    if (isParseError) {
+      validated.push({
+        ...row,
+        code: "",
+        duration: "",
+        shift: "",
+        damage: "",
+        note: "",
+        status: "error",
+        statusText: row.parseError
+      });
+      continue;
+    }
+
+    const [code, durationStr, shift, damage, note] = row.fields;
+    const trimmedCode = (code || "").trim();
+    const trimmedDuration = (durationStr || "").trim();
+    const trimmedShift = (shift || "").trim();
+    const trimmedDamage = (damage || "").trim();
+    const trimmedNote = (note || "").trim();
+
+    if (!trimmedCode) {
+      errors.push("片段编号为空");
+    }
+
+    const durationNum = Number(trimmedDuration);
+    if (!trimmedDuration || isNaN(durationNum) || durationNum <= 0 || !Number.isFinite(durationNum)) {
+      errors.push("非法时长（需为正整数）");
+    }
+
+    if (trimmedShift && !validShifts.includes(trimmedShift)) {
+      errors.push(`颜色偏移「${trimmedShift}」不在可选值中`);
+    }
+
+    if (trimmedDamage && !validDamages.includes(trimmedDamage)) {
+      errors.push(`破损情况「${trimmedDamage}」不在可选值中`);
+    }
+
+    if (trimmedCode) {
+      codeCountMap[trimmedCode] = (codeCountMap[trimmedCode] || 0) + 1;
+    }
+
+    validated.push({
+      ...row,
+      code: trimmedCode,
+      duration: trimmedDuration,
+      shift: trimmedShift || "正常",
+      damage: trimmedDamage || "完好",
+      note: trimmedNote,
+      _durationNum: isNaN(durationNum) ? 0 : durationNum,
+      errors,
+      status: errors.length > 0 ? "error" : "ok",
+      statusText: errors.join("；")
+    });
+  }
+
+  const duplicateCodes = Object.entries(codeCountMap)
+    .filter(([, count]) => count > 1)
+    .map(([code]) => code);
+
+  for (const row of validated) {
+    if (row.status === "error") continue;
+    if (duplicateCodes.includes(row.code)) {
+      row.status = "dup";
+      row.statusText = "CSV 内编号重复";
+    } else if (existingCodes.includes(row.code)) {
+      row.status = "dup";
+      row.statusText = "与当前清单编号重复";
+    }
+  }
+
+  return { validated, duplicateCodes };
+}
+
+function renderImportPreview(validated) {
+  const okCount = validated.filter((r) => r.status === "ok").length;
+  const dupCount = validated.filter((r) => r.status === "dup").length;
+  const errCount = validated.filter((r) => r.status === "error").length;
+
+  els.importPreviewStats.textContent = `有效 ${okCount} 行 · 重复 ${dupCount} 行 · 错误 ${errCount} 行`;
+  els.importConfirmBtn.disabled = okCount === 0;
+
+  els.importPreviewBody.innerHTML = validated
+    .map((row) => {
+      const rowClass = row.status === "error" ? "row-error" : row.status === "dup" ? "row-dup" : "row-ok";
+      const statusClass = row.status === "error" ? "import-status-err" : row.status === "dup" ? "import-status-warn" : "import-status-ok";
+      const statusLabel = row.status === "ok" ? "✓ 有效" : row.status === "dup" ? "⚠ 重复" : "✗ 错误";
+      return `
+        <tr class="${rowClass}">
+          <td>${row.lineNum}</td>
+          <td>${escapeHtml(row.code)}</td>
+          <td>${escapeHtml(row.duration)}</td>
+          <td>${escapeHtml(row.shift)}</td>
+          <td>${escapeHtml(row.damage)}</td>
+          <td>${escapeHtml(row.note)}</td>
+          <td class="${statusClass}">${statusLabel}${row.statusText && row.status !== "ok" ? `<br/><span style="font-weight:400;font-size:11px">${escapeHtml(row.statusText)}</span>` : ""}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.importPreviewWrap.style.display = "flex";
+
+  const errorItems = [];
+  if (errCount > 0) errorItems.push(`${errCount} 行存在解析或数据错误，将跳过`);
+  if (dupCount > 0) errorItems.push(`${dupCount} 行编号重复（CSV 内或与清单冲突），将跳过`);
+
+  if (errorItems.length > 0) {
+    els.importErrors.innerHTML = `<h4>⚠ 导入注意事项</h4><ul>${errorItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+    els.importErrors.style.display = "block";
+  } else {
+    els.importErrors.style.display = "none";
+  }
+}
+
+function handleImportParse() {
+  let text = els.importCsvText.value.trim();
+  const file = els.importCsvFile.files[0];
+
+  if (!text && !file) {
+    els.importErrors.innerHTML = `<h4>⚠ 请输入 CSV 文本或上传 CSV 文件</h4>`;
+    els.importErrors.style.display = "block";
+    els.importPreviewWrap.style.display = "none";
+    return;
+  }
+
+  if (file && !text) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      text = reader.result;
+      els.importCsvText.value = text;
+      doParseAndPreview(text);
+    };
+    reader.onerror = () => {
+      els.importErrors.innerHTML = `<h4>⚠ 文件读取失败</h4>`;
+      els.importErrors.style.display = "block";
+    };
+    reader.readAsText(file, "UTF-8");
+  } else {
+    doParseAndPreview(text);
+  }
+}
+
+function doParseAndPreview(text) {
+  const rows = parseCsvText(text);
+  if (rows.length === 0) {
+    els.importErrors.innerHTML = `<h4>⚠ 未解析到有效行</h4><ul><li>请确认 CSV 每行至少4列：片段编号, 秒数, 颜色偏移, 破损情况</li></ul>`;
+    els.importErrors.style.display = "block";
+    els.importPreviewWrap.style.display = "none";
+    return;
+  }
+  const { validated } = validateImportRows(rows);
+  importParsedRows = validated;
+  renderImportPreview(validated);
+}
+
+function handleImportConfirm() {
+  const reel = getActiveReel();
+  if (!reel) return;
+
+  const okRows = importParsedRows.filter((r) => r.status === "ok");
+  if (okRows.length === 0) return;
+
+  if (!confirm(`确认将 ${okRows.length} 条有效片段导入当前放映清单「${reel.title}」？重复和错误行将跳过。`)) return;
+
+  for (const row of okRows) {
+    reel.segments.push({
+      id: crypto.randomUUID(),
+      code: row.code,
+      duration: row._durationNum,
+      shift: row.shift,
+      damage: row.damage,
+      note: row.note,
+      thumb: ""
+    });
+  }
+
+  closeImportModal();
+  renderAll();
+}
+
+els.importBtn.addEventListener("click", openImportModal);
+els.importModalClose.addEventListener("click", closeImportModal);
+els.importModalBackdrop.addEventListener("click", closeImportModal);
+els.importCancelBtn.addEventListener("click", closeImportModal);
+els.importParseBtn.addEventListener("click", handleImportParse);
+els.importConfirmBtn.addEventListener("click", handleImportConfirm);
+
+els.importCsvFile.addEventListener("change", () => {
+  const file = els.importCsvFile.files[0];
+  if (file && !els.importCsvText.value.trim()) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      els.importCsvText.value = reader.result;
+    };
+    reader.readAsText(file, "UTF-8");
+  }
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
-    if (activeDrawerSegmentId) {
+    if (els.importModal.classList.contains("open")) {
+      closeImportModal();
+    } else if (activeDrawerSegmentId) {
       closeDrawer();
     } else if (els.reelModal.classList.contains("open")) {
       closeReelModal();
