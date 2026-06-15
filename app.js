@@ -50,7 +50,8 @@ const defaultState = {
       damage: "轻微划痕",
       notePrefix: "【旧片】"
     }
-  ]
+  ],
+  checklist: []
 };
 
 let state = loadState();
@@ -82,7 +83,12 @@ const els = {
   templateDamageInput: document.querySelector("#templateDamageInput"),
   templateNoteInput: document.querySelector("#templateNoteInput"),
   templateList: document.querySelector("#templateList"),
-  templateCount: document.querySelector("#templateCount")
+  templateCount: document.querySelector("#templateCount"),
+  checklistForm: document.querySelector("#checklistForm"),
+  checklistInput: document.querySelector("#checklistInput"),
+  autoChecklist: document.querySelector("#autoChecklist"),
+  manualChecklist: document.querySelector("#manualChecklist"),
+  checklistStats: document.querySelector("#checklistStats")
 };
 
 function loadState() {
@@ -245,13 +251,114 @@ function deleteTemplate(id) {
   renderAll();
 }
 
+function syncAutoChecklist() {
+  const problemSegments = state.segments.filter(
+    (seg) => seg.damage !== "完好" || seg.shift !== "正常"
+  );
+  const existingAutoMap = {};
+  state.checklist
+    .filter((item) => item.source === "auto")
+    .forEach((item) => {
+      existingAutoMap[item.segmentId] = item;
+    });
+  const syncedAutoItems = [];
+  problemSegments.forEach((seg) => {
+    const existing = existingAutoMap[seg.id];
+    const reasons = [seg.shift !== "正常" ? seg.shift : "", seg.damage !== "完好" ? seg.damage : ""].filter(Boolean).join("、");
+    if (existing) {
+      existing.text = `${seg.code}（${reasons}）`;
+      syncedAutoItems.push(existing);
+    } else {
+      syncedAutoItems.push({
+        id: crypto.randomUUID(),
+        text: `${seg.code}（${reasons}）`,
+        source: "auto",
+        segmentId: seg.id,
+        completed: false
+      });
+    }
+  });
+  const manualItems = state.checklist.filter((item) => item.source === "manual");
+  state.checklist = [...syncedAutoItems, ...manualItems];
+}
+
+function addChecklistItem(event) {
+  event.preventDefault();
+  const text = els.checklistInput.value.trim();
+  if (!text) return;
+  state.checklist.push({
+    id: crypto.randomUUID(),
+    text,
+    source: "manual",
+    segmentId: null,
+    completed: false
+  });
+  els.checklistForm.reset();
+  renderAll();
+}
+
+function toggleChecklistItem(id) {
+  const item = state.checklist.find((c) => c.id === id);
+  if (item) item.completed = !item.completed;
+  renderAll();
+}
+
+function deleteChecklistItem(id) {
+  state.checklist = state.checklist.filter((c) => c.id !== id);
+  renderAll();
+}
+
+function renderChecklist() {
+  const autoItems = state.checklist.filter((item) => item.source === "auto");
+  const manualItems = state.checklist.filter((item) => item.source === "manual");
+  const completed = state.checklist.filter((item) => item.completed).length;
+  const total = state.checklist.length;
+  els.checklistStats.textContent = `${completed} / ${total} 项已完成`;
+
+  els.autoChecklist.innerHTML =
+    autoItems
+      .map((item) => {
+        const checkedClass = item.completed ? "checked" : "";
+        return `
+          <div class="checklist-item auto-item ${checkedClass}" data-check-id="${item.id}">
+            <label class="checklist-checkbox">
+              <input type="checkbox" ${item.completed ? "checked" : ""} data-toggle-check="${item.id}" />
+              <span class="checkmark"></span>
+            </label>
+            <span class="checklist-text">${escapeHtml(item.text)}</span>
+            <span class="checklist-badge auto-badge">自动</span>
+          </div>
+        `;
+      })
+      .join("") || `<p class="empty">当前无破损或颜色偏移片段，无需自动待办。</p>`;
+
+  els.manualChecklist.innerHTML =
+    manualItems
+      .map((item) => {
+        const checkedClass = item.completed ? "checked" : "";
+        return `
+          <div class="checklist-item manual-item ${checkedClass}" data-check-id="${item.id}">
+            <label class="checklist-checkbox">
+              <input type="checkbox" ${item.completed ? "checked" : ""} data-toggle-check="${item.id}" />
+              <span class="checkmark"></span>
+            </label>
+            <span class="checklist-text">${escapeHtml(item.text)}</span>
+            <button type="button" class="checklist-delete" title="删除检查项" data-delete-check="${item.id}">×</button>
+          </div>
+        `;
+      })
+      .join("") || `<p class="empty">暂无临时检查项，可在上方输入添加。</p>`;
+}
+
 function renderAll() {
-  saveState();
   els.reelTitle.value = state.reelTitle;
   renderStats();
   renderList();
   renderWarnings();
   renderTemplates();
+  syncAutoChecklist();
+  renderChecklist();
+  saveState();
 }
 
 function formatDuration(seconds) {
@@ -387,6 +494,18 @@ els.templateList.addEventListener("click", (event) => {
   const deleteBtn = event.target.closest("[data-delete-template]");
   if (applyBtn) applyTemplate(applyBtn.dataset.applyTemplate);
   if (deleteBtn) deleteTemplate(deleteBtn.dataset.deleteTemplate);
+});
+
+els.checklistForm.addEventListener("submit", addChecklistItem);
+
+document.querySelector(".checklist-panel").addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-delete-check]");
+  if (remove) deleteChecklistItem(remove.dataset.deleteCheck);
+});
+
+document.querySelector(".checklist-panel").addEventListener("change", (event) => {
+  const toggle = event.target.closest("[data-toggle-check]");
+  if (toggle) toggleChecklistItem(toggle.dataset.toggleCheck);
 });
 
 renderAll();

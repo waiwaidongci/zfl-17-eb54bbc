@@ -161,9 +161,41 @@
         </section>
 
         <aside class="panel warning-panel">
-          <h2>试映前核对</h2>
+          <div class="panel-head">
+            <h2>问题片段概览</h2>
+            <span class="read-only-badge">只读</span>
+          </div>
+          <p class="panel-hint">自动汇总所有破损与颜色偏移片段，便于快速浏览问题分布。如需追踪处理进度，请使用下方检查单。</p>
           <div id="warningList" class="warning-list"></div>
         </aside>
+      </section>
+
+      <section class="checklist-section">
+        <div class="panel checklist-panel">
+          <div class="panel-head">
+            <h2>试映任务检查单</h2>
+            <span id="checklistStats">0 / 0 项已完成</span>
+          </div>
+          <p class="panel-hint">待办追踪：破损和颜色偏移片段自动转为待办，支持手动添加临时检查项。勾选标记完成，状态自动保存，下次打开自动恢复。</p>
+          <div class="checklist-legend">
+            <span class="legend-item"><span class="legend-dot auto-dot"></span> 自动待办：系统生成，不可删除</span>
+            <span class="legend-item"><span class="legend-dot manual-dot"></span> 临时检查项：手动添加，可删除</span>
+          </div>
+          <form id="checklistForm" class="checklist-form">
+            <input id="checklistInput" type="text" placeholder="输入临时检查项，如：检查放映机镜头清洁度" required />
+            <button class="primary" type="submit">添加</button>
+          </form>
+          <div class="checklist-groups">
+            <div class="checklist-group">
+              <h3 class="checklist-group-title">自动待办</h3>
+              <div id="autoChecklist" class="checklist-list"></div>
+            </div>
+            <div class="checklist-group">
+              <h3 class="checklist-group-title">临时检查项</h3>
+              <div id="manualChecklist" class="checklist-list"></div>
+            </div>
+          </div>
+        </div>
       </section>
     </main>
 
