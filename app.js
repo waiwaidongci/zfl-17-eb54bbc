@@ -2290,7 +2290,7 @@ const BACKUP_VERSION = 2;
 const REQUIRED_REEL_FIELDS = ["id", "title", "createdAt", "segments", "checklist"];
 const REQUIRED_SEGMENT_FIELDS = ["id", "code", "duration", "shift", "damage", "note", "thumb"];
 const REQUIRED_TEMPLATE_FIELDS = ["id", "name", "duration", "shift", "damage", "notePrefix"];
-const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "completed", "priority"];
+const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "completed"];
 
 let backupParsedData = null;
 let backupConflictReport = null;
@@ -2668,7 +2668,7 @@ function normalizeImportedBackupData(backupData, usedIds = {}) {
     reelCopy.checklist = reelCopy.checklist.map((item) => {
       const newItemId = resolveImportedId(item.id, usedChecklistIds);
       const newSegId = item.segmentId ? (segmentIdFirstOccurrenceMap[item.segmentId] || item.segmentId) : null;
-      return { ...item, id: newItemId, segmentId: newSegId };
+      return { priority: "normal", ...item, id: newItemId, segmentId: newSegId };
     });
 
     return reelCopy;
