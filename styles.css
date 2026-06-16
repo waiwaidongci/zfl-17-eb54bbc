@@ -1836,6 +1836,201 @@ label {
   flex-shrink: 0;
 }
 
+.timeline-risk-badge {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 16px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+
+.timeline-risk-badge.risk-safe {
+  background: linear-gradient(135deg, #4d7656, #3a5c42);
+}
+
+.timeline-risk-badge.risk-low {
+  background: linear-gradient(135deg, #347d89, #2a6873);
+}
+
+.timeline-risk-badge.risk-medium {
+  background: linear-gradient(135deg, #d49b35, #b8842c);
+}
+
+.timeline-risk-badge.risk-high {
+  background: linear-gradient(135deg, #b54d48, #9a3e3a);
+  animation: risk-pulse 2s ease-in-out infinite;
+}
+
+@keyframes risk-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(181, 77, 72, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(181, 77, 72, 0.15);
+  }
+}
+
+.timeline-block.timeline-dimmed {
+  opacity: 0.22;
+  filter: grayscale(0.4);
+  position: relative;
+}
+
+.timeline-block.timeline-dimmed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 4px,
+    rgba(31, 36, 40, 0.1) 4px,
+    rgba(31, 36, 40, 0.1) 8px
+  );
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.timeline-block.timeline-dimmed:hover {
+  opacity: 0.45;
+  filter: grayscale(0.1);
+  transform: translateY(-1px);
+}
+
+.timeline-block.timeline-visible:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(31, 36, 40, 0.28);
+}
+
+.timeline-block:active {
+  transform: translateY(-1px) scale(0.98);
+  transition: transform 0.08s ease;
+}
+
+.timeline-panel {
+  position: relative;
+}
+
+.timeline-tooltip {
+  position: absolute;
+  z-index: 100;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(31, 36, 40, 0.22);
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+  pointer-events: none;
+}
+
+.timeline-tooltip.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.timeline-tooltip::before {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 12px;
+  height: 12px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.tooltip-row,
+.tooltip-note-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 3px 0;
+}
+
+.tooltip-note-row {
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px dashed rgba(31, 36, 40, 0.12);
+}
+
+.tooltip-label {
+  flex-shrink: 0;
+  min-width: 36px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.tooltip-value {
+  flex: 1;
+  color: var(--ink);
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.tooltip-risk {
+  padding: 1px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  font-weight: 900;
+}
+
+.tooltip-risk.risk-safe {
+  background: rgba(77, 118, 86, 0.12);
+  color: #3a5c42;
+}
+
+.tooltip-risk.risk-low {
+  background: rgba(52, 125, 137, 0.12);
+  color: #2a6873;
+}
+
+.tooltip-risk.risk-medium {
+  background: rgba(212, 155, 53, 0.15);
+  color: #a8771e;
+}
+
+.tooltip-risk.risk-high {
+  background: rgba(181, 77, 72, 0.15);
+  color: #9a3e3a;
+}
+
+.tooltip-note {
+  font-weight: 600;
+  opacity: 0.88;
+  line-height: 1.55;
+}
+
+.tooltip-hint {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(31, 36, 40, 0.12);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
 @media (max-width: 660px) {
   .timeline-scroll {
     height: auto;
@@ -1866,6 +2061,14 @@ label {
     padding: 0 4px;
   }
 
+  .timeline-risk-badge {
+    min-width: 15px;
+    height: 14px;
+    padding: 0 3px;
+    font-size: 8px;
+    line-height: 14px;
+  }
+
   .timeline-legend {
     gap: 8px;
     font-size: 10px;
@@ -1873,6 +2076,13 @@ label {
   }
 
   .timeline-legend .legend-item {
+    font-size: 11px;
+  }
+
+  .timeline-tooltip {
+    min-width: 180px;
+    max-width: 260px;
+    padding: 10px 12px;
     font-size: 11px;
   }
 }

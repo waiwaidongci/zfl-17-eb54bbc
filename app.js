@@ -889,7 +889,9 @@ function collectElements() {
     importConfirmBtn: document.querySelector("#importConfirmBtn"),
     importCancelBtn: document.querySelector("#importCancelBtn"),
     timelineBar: document.querySelector("#timelineBar"),
+    timelineScroll: document.querySelector("#timelineScroll"),
     timelineFilterHint: document.querySelector("#timelineFilterHint"),
+    timelineTooltip: document.querySelector("#timelineTooltip"),
 
     backupBtn: document.querySelector("#backupBtn"),
     backupModalBackdrop: document.querySelector("#backupModalBackdrop"),
@@ -1505,7 +1507,10 @@ function renderTimeline() {
       const opacityClass = isFiltering && !visible ? "timeline-dimmed" : "timeline-visible";
       const damageClass = hasDamage ? "timeline-damaged" : "";
       const idx = reel.segments.findIndex((s) => s.id === seg.id) + 1;
-      return `<div class="timeline-block ${opacityClass} ${damageClass}" style="width:${widthPx}px;background:${bg}" data-timeline-id="${seg.id}" title="${idx}. ${escapeHtml(seg.code)} · ${formatDuration(seg.duration)} · ${escapeHtml(seg.shift)} · ${escapeHtml(seg.damage)}${isFiltering && !visible ? " [已隐藏]" : ""}"><span class="timeline-block-code">${escapeHtml(seg.code)}</span>${hasDamage ? `<span class="timeline-damage-icon">⚠</span>` : ""}<span class="timeline-duration">${formatDuration(seg.duration)}</span></div>`;
+      const risk = calculateSegmentRisk(seg);
+      const noteExcerpt = seg.note ? seg.note.substring(0, 40) + (seg.note.length > 40 ? "…" : "") : "—";
+      const riskLabel = `${risk.score}分 · ${risk.label}`;
+      return `<div class="timeline-block ${opacityClass} ${damageClass}" style="width:${widthPx}px;background:${bg}" data-timeline-id="${seg.id}" data-seg-index="${idx}" data-seg-code="${escapeHtml(seg.code)}" data-seg-duration="${formatDuration(seg.duration)}" data-seg-risk="${escapeHtml(riskLabel)}" data-seg-risk-score="${risk.score}" data-seg-risk-css="${risk.css}" data-seg-note="${escapeHtml(noteExcerpt)}" data-seg-shift="${escapeHtml(seg.shift)}" data-seg-damage="${escapeHtml(seg.damage)}" data-seg-hidden="${isFiltering && !visible ? "1" : "0"}"><span class="timeline-block-code">${escapeHtml(seg.code)}</span><span class="timeline-risk-badge ${risk.css}">${risk.score}</span>${hasDamage ? `<span class="timeline-damage-icon">⚠</span>` : ""}<span class="timeline-duration">${formatDuration(seg.duration)}</span></div>`;
     })
     .join("");
 }
@@ -2012,6 +2017,108 @@ els.timelineBar.addEventListener("click", (event) => {
   const block = event.target.closest("[data-timeline-id]");
   if (block) openDrawer(block.dataset.timelineId);
 });
+
+let timelineTooltipHideTimer = null;
+
+function showTimelineTooltip(block, event) {
+  if (timelineTooltipHideTimer) {
+    clearTimeout(timelineTooltipHideTimer);
+    timelineTooltipHideTimer = null;
+  }
+
+  const idx = block.dataset.segIndex;
+  const code = block.dataset.segCode;
+  const duration = block.dataset.segDuration;
+  const risk = block.dataset.segRisk;
+  const riskCss = block.dataset.segRiskCss;
+  const note = block.dataset.segNote;
+  const shift = block.dataset.segShift;
+  const damage = block.dataset.segDamage;
+  const isHidden = block.dataset.segHidden === "1";
+
+  els.timelineTooltip.innerHTML = `
+    <div class="tooltip-row">
+      <span class="tooltip-label">序号</span>
+      <span class="tooltip-value">#${idx} · ${escapeHtml(code)}</span>
+    </div>
+    <div class="tooltip-row">
+      <span class="tooltip-label">时长</span>
+      <span class="tooltip-value">${duration}</span>
+    </div>
+    <div class="tooltip-row">
+      <span class="tooltip-label">风险</span>
+      <span class="tooltip-value tooltip-risk ${riskCss}">${escapeHtml(risk)}</span>
+    </div>
+    <div class="tooltip-row">
+      <span class="tooltip-label">状态</span>
+      <span class="tooltip-value">${escapeHtml(shift)} · ${escapeHtml(damage)}</span>
+    </div>
+    <div class="tooltip-note-row">
+      <span class="tooltip-label">备注</span>
+      <span class="tooltip-value tooltip-note">${escapeHtml(note)}</span>
+    </div>
+    ${isHidden ? '<div class="tooltip-hint">当前筛选条件下已隐藏（淡化显示）</div>' : '<div class="tooltip-hint">点击查看并编辑详情</div>'}
+  `;
+
+  els.timelineTooltip.classList.add("visible");
+  els.timelineTooltip.setAttribute("aria-hidden", "false");
+  positionTimelineTooltip(block, event);
+}
+
+function positionTimelineTooltip(block, event) {
+  const panelRect = els.timelineBar.closest(".timeline-panel").getBoundingClientRect();
+  const blockRect = block.getBoundingClientRect();
+  const tooltipRect = els.timelineTooltip.getBoundingClientRect();
+
+  let left = blockRect.left - panelRect.left + blockRect.width / 2 - tooltipRect.width / 2;
+  let top = blockRect.top - panelRect.top - tooltipRect.height - 10;
+
+  if (left < 4) left = 4;
+  if (left + tooltipRect.width > panelRect.width - 4) {
+    left = panelRect.width - tooltipRect.width - 4;
+  }
+
+  if (top < 4) {
+    top = blockRect.bottom - panelRect.top + 10;
+  }
+
+  els.timelineTooltip.style.left = `${left}px`;
+  els.timelineTooltip.style.top = `${top}px`;
+}
+
+function hideTimelineTooltip() {
+  if (timelineTooltipHideTimer) clearTimeout(timelineTooltipHideTimer);
+  timelineTooltipHideTimer = setTimeout(() => {
+    els.timelineTooltip.classList.remove("visible");
+    els.timelineTooltip.setAttribute("aria-hidden", "true");
+  }, 80);
+}
+
+els.timelineBar.addEventListener("mouseover", (event) => {
+  const block = event.target.closest("[data-timeline-id]");
+  if (block) showTimelineTooltip(block, event);
+});
+
+els.timelineBar.addEventListener("mousemove", (event) => {
+  const block = event.target.closest("[data-timeline-id]");
+  if (block && els.timelineTooltip.classList.contains("visible")) {
+    positionTimelineTooltip(block, event);
+  }
+});
+
+els.timelineBar.addEventListener("mouseout", (event) => {
+  const block = event.target.closest("[data-timeline-id]");
+  const related = event.relatedTarget;
+  if (block && (!related || !related.closest("[data-timeline-id]"))) {
+    hideTimelineTooltip();
+  }
+});
+
+els.timelineScroll.addEventListener("scroll", () => {
+  if (els.timelineTooltip.classList.contains("visible")) {
+    hideTimelineTooltip();
+  }
+}, true);
 
 els.checklistForm.addEventListener("submit", addChecklistItem);
 

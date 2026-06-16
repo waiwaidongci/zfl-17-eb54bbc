@@ -187,9 +187,10 @@
             <span id="timelineFilterHint"></span>
           </div>
           <p class="panel-hint">横向展示每个片段的相对长度与状态。色块宽度对应秒数，边框标记破损，筛选时对比可见与隐藏片段的总时长差异。</p>
-          <div class="timeline-scroll">
+          <div class="timeline-scroll" id="timelineScroll">
             <div id="timelineBar" class="timeline-bar"></div>
           </div>
+          <div id="timelineTooltip" class="timeline-tooltip" aria-hidden="true"></div>
           <div class="timeline-legend">
             <span class="legend-item"><span class="legend-dot" style="background:var(--cyan)"></span>正常</span>
             <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span>偏红</span>
