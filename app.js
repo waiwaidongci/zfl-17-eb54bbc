@@ -817,7 +817,9 @@ const els = {
   highRiskCount: document.querySelector("#highRiskCount"),
   riskOverviewStats: document.querySelector("#riskOverviewStats"),
   riskSummaryBar: document.querySelector("#riskSummaryBar"),
-  riskDetailList: document.querySelector("#riskDetailList")
+  riskDetailList: document.querySelector("#riskDetailList"),
+
+  reportBtn: document.querySelector("#reportBtn")
 };
 
 function getFilteredSegments() {
@@ -2580,5 +2582,377 @@ els.backupCancelBtn.addEventListener("click", closeBackupModal);
 els.backupExportBtn.addEventListener("click", exportBackup);
 els.backupFileInput.addEventListener("change", handleBackupFileSelect);
 els.backupConfirmBtn.addEventListener("click", confirmBackupRestore);
+
+function getShiftTagClass(shift) {
+  const map = {
+    "正常": "shift-normal",
+    "偏红": "shift-red",
+    "偏青": "shift-cyan",
+    "偏黄": "shift-yellow",
+    "褪色": "shift-fade"
+  };
+  return map[shift] || "shift-normal";
+}
+
+function getThumbHtml(segment, index, size = "normal") {
+  const width = size === "large" ? 60 : 48;
+  const height = size === "large" ? 42 : 34;
+  const placeholderClass = size === "large" ? "report-abnormal-thumb-placeholder" : "report-seg-thumb-placeholder";
+  const imgClass = size === "large" ? "report-abnormal-thumb" : "report-seg-thumb";
+  const bgColor = fallbackThumbs[index % fallbackThumbs.length];
+
+  if (segment.thumb) {
+    return `<img src="${segment.thumb}" alt="${escapeHtml(segment.code)}缩略图" class="${imgClass}" style="width:${width}px;height:${height}px" />`;
+  }
+  return `<div class="${placeholderClass}" style="background:${bgColor};width:${width}px;height:${height}px">${escapeHtml(segment.code)}</div>`;
+}
+
+function buildReportCover(reel, totalDuration, stats) {
+  const createdDate = new Date(reel.createdAt);
+  const createdDateStr = `${createdDate.getFullYear()}/${String(createdDate.getMonth() + 1).padStart(2, "0")}/${String(createdDate.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  const generatedDateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  return `
+    <div class="report-cover">
+      <div class="report-cover-top">
+        <div class="report-cover-eyebrow">离 线 试 映 报 告</div>
+        <h1 class="report-cover-title">${escapeHtml(reel.title || "未命名胶片卷")}</h1>
+        <p class="report-cover-subtitle">胶片分镜条核对台 · 自动生成报告</p>
+        <div class="report-cover-film-icon">🎞️</div>
+      </div>
+      <div class="report-cover-info">
+        <div class="report-cover-info-item">
+          <span>胶片卷名称</span>
+          <span>${escapeHtml(reel.title || "未命名")}</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>总时长</span>
+          <span>${formatDuration(totalDuration)}</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>片段总数</span>
+          <span>${reel.segments.length} 个</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>高风险片段</span>
+          <span>${stats.highRisk} 个</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>破损片段</span>
+          <span>${stats.damaged} 个</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>创建时间</span>
+          <span>${createdDateStr}</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>检查单进度</span>
+          <span>${stats.checklistCompleted} / ${stats.checklistTotal} 项</span>
+        </div>
+        <div class="report-cover-info-item">
+          <span>报告生成时间</span>
+          <span>${generatedDateStr}</span>
+        </div>
+      </div>
+      <div class="report-cover-footer">
+        本报告由胶片分镜条核对台自动生成 · 离线环境可用 · 可直接打印或保存
+      </div>
+    </div>
+  `;
+}
+
+function buildReportSummary(reel, stats) {
+  return `
+    <div class="report-section">
+      <h2 class="report-section-title">概览统计</h2>
+      <div class="report-summary-grid">
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">总片段数</span>
+          <span class="report-summary-card-value">${reel.segments.length}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">总时长</span>
+          <span class="report-summary-card-value">${formatDuration(stats.totalDuration)}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">破损片段</span>
+          <span class="report-summary-card-value risk-high">${stats.damaged}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">高风险</span>
+          <span class="report-summary-card-value risk-high">${stats.highRisk}</span>
+        </div>
+      </div>
+      <div class="report-summary-grid">
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">安全</span>
+          <span class="report-summary-card-value risk-safe">${stats.safe}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">低风险</span>
+          <span class="report-summary-card-value risk-low">${stats.lowRisk}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">中风险</span>
+          <span class="report-summary-card-value risk-medium">${stats.mediumRisk}</span>
+        </div>
+        <div class="report-summary-card">
+          <span class="report-summary-card-label">异常片段</span>
+          <span class="report-summary-card-value risk-high">${stats.abnormal}</span>
+        </div>
+      </div>
+      <div class="report-risk-bar">
+        ${stats.safe > 0 ? `<div class="report-risk-bar-segment report-risk-bar-safe" style="width:${(stats.safe / reel.segments.length) * 100}%">安全 ${stats.safe}</div>` : ""}
+        ${stats.lowRisk > 0 ? `<div class="report-risk-bar-segment report-risk-bar-low" style="width:${(stats.lowRisk / reel.segments.length) * 100}%">低 ${stats.lowRisk}</div>` : ""}
+        ${stats.mediumRisk > 0 ? `<div class="report-risk-bar-segment report-risk-bar-medium" style="width:${(stats.mediumRisk / reel.segments.length) * 100}%">中 ${stats.mediumRisk}</div>` : ""}
+        ${stats.highRisk > 0 ? `<div class="report-risk-bar-segment report-risk-bar-high" style="width:${(stats.highRisk / reel.segments.length) * 100}%">高 ${stats.highRisk}</div>` : ""}
+      </div>
+      <div class="report-risk-legend">
+        <span class="report-risk-legend-item"><span class="report-risk-legend-dot" style="background:#4d7656"></span>安全</span>
+        <span class="report-risk-legend-item"><span class="report-risk-legend-dot" style="background:#347d89"></span>低风险</span>
+        <span class="report-risk-legend-item"><span class="report-risk-legend-dot" style="background:#d49b35"></span>中风险</span>
+        <span class="report-risk-legend-item"><span class="report-risk-legend-dot" style="background:#b54d48"></span>高风险</span>
+      </div>
+    </div>
+  `;
+}
+
+function buildReportSegmentsTable(reel) {
+  const rows = reel.segments.map((seg, index) => {
+    const risk = calculateSegmentRisk(seg);
+    const hasDamage = seg.damage !== "完好";
+    return `
+      <tr>
+        <td style="width:58px">${getThumbHtml(seg, index, "normal")}</td>
+        <td style="width:50px;text-align:center;font-weight:700;color:#697179">${index + 1}</td>
+        <td><span class="report-seg-code">${escapeHtml(seg.code)}</span></td>
+        <td><span class="report-seg-duration">${formatDuration(seg.duration)}</span></td>
+        <td><span class="report-tag ${getShiftTagClass(seg.shift)}">${escapeHtml(seg.shift)}</span></td>
+        <td><span class="report-tag ${hasDamage ? "damage-bad" : "damage-ok"}">${escapeHtml(seg.damage)}</span></td>
+        <td><span class="report-risk-badge ${risk.css}">${risk.label} ${risk.score}分</span></td>
+        <td><span class="report-seg-note" title="${escapeHtml(seg.note || "无备注")}">${escapeHtml(seg.note || "—")}</span></td>
+      </tr>
+    `;
+  }).join("");
+
+  return `
+    <div class="report-section">
+      <h2 class="report-section-title">片段顺序清单</h2>
+      <table class="report-segments-table">
+        <thead>
+          <tr>
+            <th style="width:58px">缩略图</th>
+            <th style="width:50px;text-align:center">序号</th>
+            <th>片段编号</th>
+            <th>时长</th>
+            <th>颜色偏移</th>
+            <th>破损情况</th>
+            <th>风险等级</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function buildReportChecklist(reel, stats) {
+  const autoItems = reel.checklist.filter(item => item.source === "auto");
+  const manualItems = reel.checklist.filter(item => item.source === "manual");
+  const progressPercent = stats.checklistTotal > 0 ? (stats.checklistCompleted / stats.checklistTotal) * 100 : 0;
+
+  const renderChecklistItems = (items) => {
+    if (items.length === 0) {
+      return `<div style="padding:10px;color:#697179;font-size:11px">暂无项目</div>`;
+    }
+    return items.map(item => `
+      <div class="report-checklist-item ${item.completed ? "completed" : ""}">
+        <div class="report-checklist-checkbox ${item.completed ? "checked" : ""}">${item.completed ? "✓" : ""}</div>
+        <span class="report-checklist-text">${escapeHtml(item.text)}</span>
+        <span class="report-checklist-badge ${item.source}">${item.source === "auto" ? "自动" : "手动"}</span>
+      </div>
+    `).join("");
+  };
+
+  return `
+    <div class="report-section">
+      <h2 class="report-section-title">检查单完成情况</h2>
+      <div class="report-checklist-progress">
+        <span class="report-checklist-progress-text">${stats.checklistCompleted} / ${stats.checklistTotal} 项已完成</span>
+        <div class="report-checklist-progress-bar">
+          <div class="report-checklist-progress-fill" style="width:${progressPercent}%"></div>
+        </div>
+        <span style="font-weight:700;color:${progressPercent === 100 ? '#4d7656' : '#d49b35'}">${progressPercent.toFixed(0)}%</span>
+      </div>
+      <div class="report-checklist-group">
+        <h3 class="report-checklist-group-title">自动待办（${autoItems.length} 项）</h3>
+        ${renderChecklistItems(autoItems)}
+      </div>
+      <div class="report-checklist-group">
+        <h3 class="report-checklist-group-title">临时检查项（${manualItems.length} 项）</h3>
+        ${renderChecklistItems(manualItems)}
+      </div>
+    </div>
+  `;
+}
+
+function buildReportAbnormal(reel, stats) {
+  const abnormalSegments = reel.segments
+    .map((seg, index) => ({ segment: seg, index, risk: calculateSegmentRisk(seg) }))
+    .filter(item => item.segment.damage !== "完好" || item.segment.shift !== "正常" || item.risk.score > 0)
+    .sort((a, b) => b.risk.score - a.risk.score);
+
+  if (abnormalSegments.length === 0) {
+    return `
+      <div class="report-section">
+        <h2 class="report-section-title">异常片段汇总</h2>
+        <div style="padding:24px;text-align:center;color:#4d7656;font-weight:700;background:rgba(77,118,86,0.06);border-radius:6px;border:1px solid rgba(77,118,86,0.2)">
+          ✓ 当前没有异常片段，所有片段状态良好
+        </div>
+      </div>
+    `;
+  }
+
+  const cards = abnormalSegments.map(({ segment, index, risk }) => {
+    const reasons = [];
+    if (segment.shift !== "正常") reasons.push(segment.shift);
+    if (segment.damage !== "完好") reasons.push(segment.damage);
+    risk.reasons.forEach(r => reasons.push(r.split("(+")[0]));
+
+    const uniqueReasons = [...new Set(reasons)];
+    const cardClass = risk.score >= 7 ? "" : "medium";
+
+    return `
+      <div class="report-abnormal-card ${cardClass}">
+        ${getThumbHtml(segment, index, "large")}
+        <div class="report-abnormal-info">
+          <span class="report-abnormal-code">${index + 1}. ${escapeHtml(segment.code)}</span>
+          <div class="report-abnormal-reasons">
+            ${uniqueReasons.map(r => `<span class="report-tag damage-bad">${escapeHtml(r)}</span>`).join("")}
+          </div>
+          ${segment.note ? `<span class="report-abnormal-note">${escapeHtml(segment.note)}</span>` : ""}
+        </div>
+        <div class="report-abnormal-meta">
+          <span class="report-abnormal-duration">${formatDuration(segment.duration)}</span>
+          <span class="report-risk-badge ${risk.css}">${risk.label} ${risk.score}分</span>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="report-section">
+      <h2 class="report-section-title">异常片段汇总（${abnormalSegments.length} 项）</h2>
+      <p style="color:#697179;font-size:11px;margin:0 0 12px">按风险评分从高到低排序，高风险片段（红色边框）需优先处理。</p>
+      <div class="report-abnormal-list">
+        ${cards}
+      </div>
+    </div>
+  `;
+}
+
+function buildReportFooter(reel) {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, "0")}/${String(now.getDate()).padStart(2, "0")} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return `
+    <div class="report-page-footer">
+      <span>胶片卷：${escapeHtml(reel.title || "未命名")}</span>
+      <span>报告生成时间：${dateStr}</span>
+      <span>胶片分镜条核对台</span>
+    </div>
+  `;
+}
+
+function computeReportStats(reel) {
+  const totalDuration = reel.segments.reduce((sum, s) => sum + Number(s.duration), 0);
+  const damaged = reel.segments.filter(s => s.damage !== "完好").length;
+  const abnormal = reel.segments.filter(s => s.damage !== "完好" || s.shift !== "正常").length;
+
+  const riskResults = reel.segments.map(s => calculateSegmentRisk(s));
+  const safe = riskResults.filter(r => r.css === "risk-safe").length;
+  const lowRisk = riskResults.filter(r => r.css === "risk-low").length;
+  const mediumRisk = riskResults.filter(r => r.css === "risk-medium").length;
+  const highRisk = riskResults.filter(r => r.css === "risk-high").length;
+
+  const checklistCompleted = reel.checklist.filter(c => c.completed).length;
+  const checklistTotal = reel.checklist.length;
+
+  return { totalDuration, damaged, abnormal, safe, lowRisk, mediumRisk, highRisk, checklistCompleted, checklistTotal };
+}
+
+function generateReportHtml() {
+  const reel = getActiveReel();
+  if (!reel) {
+    return `<p style="padding:40px;text-align:center;color:#b54d48">没有可用的胶片卷数据。</p>`;
+  }
+
+  const stats = computeReportStats(reel);
+
+  const coverHtml = buildReportCover(reel, stats.totalDuration, stats);
+  const summaryHtml = buildReportSummary(reel, stats);
+  const segmentsHtml = buildReportSegmentsTable(reel);
+  const checklistHtml = buildReportChecklist(reel, stats);
+  const abnormalHtml = buildReportAbnormal(reel, stats);
+  const footerHtml = buildReportFooter(reel);
+
+  return `
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="UTF-8" />
+      <title>试映报告 - ${escapeHtml(reel.title || "未命名胶片卷")}</title>
+      <style>
+        ${document.querySelector('link[rel="stylesheet"]') ? "" : ""}
+      </style>
+      <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body class="report-window-body">
+      <div class="report-toolbar">
+        <button type="button" onclick="window.print()" style="background:#1f2428;color:#fff;border-color:#1f2428;font-weight:700">🖨️ 打印报告</button>
+        <button type="button" onclick="window.close()" style="background:#fffdf7">关闭</button>
+      </div>
+      <div class="report-container">
+        ${coverHtml}
+        ${summaryHtml}
+        ${segmentsHtml}
+        ${checklistHtml}
+        ${abnormalHtml}
+        ${footerHtml}
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function openReportWindow() {
+  const reel = getActiveReel();
+  if (!reel) {
+    alert("没有可用的胶片卷数据。");
+    return;
+  }
+
+  const reportHtml = generateReportHtml();
+  const reportWindow = window.open("", "_blank", "width=950,height=1200,resizable=yes,scrollbars=yes,menubar=yes,toolbar=yes");
+
+  if (!reportWindow) {
+    alert("无法打开报告窗口，请检查浏览器的弹窗拦截设置。");
+    return;
+  }
+
+  reportWindow.document.open();
+  reportWindow.document.write(reportHtml);
+  reportWindow.document.close();
+
+  const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+  const baseTag = reportWindow.document.createElement("base");
+  baseTag.href = baseUrl;
+  reportWindow.document.head.appendChild(baseTag);
+}
+
+els.reportBtn.addEventListener("click", openReportWindow);
 
 renderAll();
