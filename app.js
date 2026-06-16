@@ -137,6 +137,8 @@ class HistoryManager {
         return new DuplicateReelCommand(data.sourceReelId, data.newReel);
       case "switchReel":
         return new SwitchReelCommand(data.oldActiveId, data.newActiveId);
+      case "archiveReel":
+        return new ArchiveReelCommand(data.reelId, data.previousActiveId, data.targetArchived);
       default:
         return null;
     }
@@ -497,6 +499,61 @@ class RenameReelCommand extends BaseCommand {
   }
 }
 
+class ArchiveReelCommand extends BaseCommand {
+  constructor(reelId, previousActiveId, targetArchived) {
+    super("archiveReel");
+    this.reelId = reelId;
+    this.previousActiveId = previousActiveId;
+    this.targetArchived = targetArchived;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    reel.archived = this.targetArchived;
+
+    if (this.targetArchived && state.activeReelId === this.reelId) {
+      const firstActive = state.reels.find((r) => !r.archived);
+      if (firstActive) {
+        state.activeReelId = firstActive.id;
+      }
+    }
+
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    reel.archived = !this.targetArchived;
+
+    if (!this.targetArchived && state.activeReelId === this.reelId) {
+      const firstActive = state.reels.find((r) => !r.archived);
+      if (firstActive) {
+        state.activeReelId = firstActive.id;
+      }
+    } else if (this.previousActiveId) {
+      state.activeReelId = this.previousActiveId;
+    }
+
+    renderAll();
+  }
+
+  getLabel() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    const title = reel ? reel.title : "";
+    return this.targetArchived ? `归档胶片卷「${title}」` : `恢复胶片卷「${title}」`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      previousActiveId: this.previousActiveId,
+      targetArchived: this.targetArchived
+    };
+  }
+}
+
 class DuplicateReelCommand extends BaseCommand {
   constructor(sourceReelId, newReel) {
     super("duplicateReel");
@@ -569,6 +626,7 @@ function createDefaultReel(title = "春日试映A卷") {
     id: crypto.randomUUID(),
     title,
     createdAt: Date.now(),
+    archived: false,
     segments: [
       {
         id: crypto.randomUUID(),
@@ -624,7 +682,7 @@ const defaultTemplates = [
 function createDefaultWorkspace() {
   const firstReel = createDefaultReel("春日试映A卷");
   return {
-    version: 2,
+    version: 3,
     activeReelId: firstReel.id,
     reels: [firstReel],
     templates: structuredClone(defaultTemplates)
@@ -633,34 +691,51 @@ function createDefaultWorkspace() {
 
 function migrateLegacyState(saved) {
   if (!saved) return null;
-  if (saved.version === 2 && Array.isArray(saved.reels)) return null;
+  if (saved.version === 3 && Array.isArray(saved.reels)) return null;
 
-  const migrated = createDefaultWorkspace();
-  const legacyReel = migrated.reels[0];
+  let migrated = structuredClone(saved);
 
-  if (typeof saved.reelTitle === "string") {
-    legacyReel.title = saved.reelTitle || "未命名胶片卷";
+  if (saved.version === undefined || !Array.isArray(saved.reels)) {
+    const defaultWs = createDefaultWorkspace();
+    migrated = structuredClone(defaultWs);
+    const legacyReel = migrated.reels[0];
+
+    if (typeof saved.reelTitle === "string") {
+      legacyReel.title = saved.reelTitle || "未命名胶片卷";
+    }
+    if (Array.isArray(saved.segments)) {
+      legacyReel.segments = saved.segments.map((seg) => ({
+        ...seg,
+        id: seg.id || crypto.randomUUID()
+      }));
+    }
+    if (Array.isArray(saved.checklist)) {
+      legacyReel.checklist = saved.checklist.map((item) => ({
+        ...item,
+        id: item.id || crypto.randomUUID(),
+        priority: item.priority || "normal"
+      }));
+    }
+    if (Array.isArray(saved.templates)) {
+      migrated.templates = saved.templates.map((tpl) => ({
+        ...tpl,
+        id: tpl.id || crypto.randomUUID()
+      }));
+    }
+    migrated.activeReelId = legacyReel.id;
+    migrated.version = 2;
   }
-  if (Array.isArray(saved.segments)) {
-    legacyReel.segments = saved.segments.map((seg) => ({
-      ...seg,
-      id: seg.id || crypto.randomUUID()
-    }));
+
+  if (migrated.version === 2) {
+    if (Array.isArray(migrated.reels)) {
+      migrated.reels.forEach((reel) => {
+        if (reel.archived === undefined) {
+          reel.archived = false;
+        }
+      });
+    }
+    migrated.version = 3;
   }
-  if (Array.isArray(saved.checklist)) {
-    legacyReel.checklist = saved.checklist.map((item) => ({
-      ...item,
-      id: item.id || crypto.randomUUID(),
-      priority: item.priority || "normal"
-    }));
-  }
-  if (Array.isArray(saved.templates)) {
-    migrated.templates = saved.templates.map((tpl) => ({
-      ...tpl,
-      id: tpl.id || crypto.randomUUID()
-    }));
-  }
-  migrated.activeReelId = legacyReel.id;
 
   return migrated;
 }
@@ -698,6 +773,9 @@ function loadState() {
   };
 
   result.reels.forEach((reel) => {
+    if (reel.archived === undefined) {
+      reel.archived = false;
+    }
     if (Array.isArray(reel.checklist)) {
       reel.checklist = reel.checklist.map((item) => ({
         priority: "normal",
@@ -714,10 +792,12 @@ function saveState() {
 }
 
 function getActiveReel() {
-  let reel = state.reels.find((r) => r.id === state.activeReelId);
-  if (!reel && state.reels.length > 0) {
-    reel = state.reels[0];
-    state.activeReelId = reel.id;
+  let reel = state.reels.find((r) => r.id === state.activeReelId && !r.archived);
+  if (!reel) {
+    reel = state.reels.find((r) => !r.archived);
+    if (reel) {
+      state.activeReelId = reel.id;
+    }
   }
   return reel;
 }
@@ -729,6 +809,7 @@ let dragReelId = null;
 let activeDrawerSegmentId = null;
 let drawerThumbDataUrl = "";
 let pendingTemplateSegmentData = null;
+let reelListTab = "active";
 
 const els = {
   reelSwitcherBtn: document.querySelector("#reelSwitcherBtn"),
@@ -741,6 +822,7 @@ const els = {
   newReelNameInput: document.querySelector("#newReelNameInput"),
   reelList: document.querySelector("#reelList"),
   reelListTip: document.querySelector("#reelListTip"),
+  reelTabBar: document.querySelector(".reel-tab-bar"),
 
   undoBtn: document.querySelector("#undoBtn"),
   redoBtn: document.querySelector("#redoBtn"),
@@ -882,8 +964,9 @@ function renderStats() {
 
 function renderReelHeader() {
   const reel = getActiveReel();
+  const activeReelCount = state.reels.filter((r) => !r.archived).length;
   els.activeReelName.textContent = reel ? reel.title : "—";
-  els.reelCountBadge.textContent = `${state.reels.length} 卷`;
+  els.reelCountBadge.textContent = `${activeReelCount} 卷`;
   if (reel) {
     els.reelTitle.value = reel.title;
   }
@@ -1313,9 +1396,26 @@ function renderChecklist() {
 }
 
 function renderReelList() {
-  els.reelListTip.textContent = `共 ${state.reels.length} 卷`;
+  const filteredReels = state.reels.filter((r) =>
+    reelListTab === "active" ? !r.archived : r.archived
+  );
+  const totalActive = state.reels.filter((r) => !r.archived).length;
+  const totalArchived = state.reels.filter((r) => r.archived).length;
+
+  els.reelListTip.textContent =
+    reelListTab === "active"
+      ? `共 ${totalActive} 卷`
+      : `共 ${totalArchived} 卷`;
+
+  if (els.reelTabBar) {
+    els.reelTabBar.querySelectorAll(".reel-tab").forEach((tab) => {
+      const tabType = tab.dataset.reelTab;
+      tab.classList.toggle("active", tabType === reelListTab);
+    });
+  }
+
   els.reelList.innerHTML =
-    state.reels
+    filteredReels
       .map((reel) => {
         const isActive = reel.id === state.activeReelId;
         const segCount = reel.segments.length;
@@ -1323,12 +1423,13 @@ function renderReelList() {
         const date = new Date(reel.createdAt);
         const dateStr = `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}/${String(date.getDate()).padStart(2, "0")}`;
         return `
-          <div class="reel-card ${isActive ? "active" : ""}" data-reel-id="${reel.id}">
+          <div class="reel-card ${isActive ? "active" : ""} ${reel.archived ? "archived" : ""}" data-reel-id="${reel.id}">
             <div class="reel-card-indicator" title="${isActive ? "当前工作卷" : "点击切换"}"></div>
             <div class="reel-card-main">
               <div class="reel-card-title-row">
                 <span class="reel-card-title" data-reel-title="${reel.id}">${escapeHtml(reel.title)}</span>
                 ${isActive ? `<span class="reel-badge active-badge">当前工作卷</span>` : ""}
+                ${reel.archived ? `<span class="reel-badge archive-badge">已归档</span>` : ""}
               </div>
               <div class="reel-card-meta">
                 <span>📽️ ${segCount} 个片段</span>
@@ -1337,17 +1438,29 @@ function renderReelList() {
               </div>
             </div>
             <div class="reel-card-actions">
+              ${
+                reel.archived
+                  ? `
+              <button type="button" class="reel-action-btn" title="恢复此卷" data-restore-reel="${reel.id}">↺</button>
+              `
+                  : `
               <button type="button" class="reel-action-btn switch-btn" title="${isActive ? "正在使用" : "切换到此卷"}" data-switch-reel="${reel.id}" ${isActive ? "disabled" : ""}>
                 ${isActive ? "✓" : "↻"}
               </button>
               <button type="button" class="reel-action-btn" title="重命名" data-rename-reel="${reel.id}">✎</button>
               <button type="button" class="reel-action-btn" title="复制此卷" data-duplicate-reel="${reel.id}">⎘</button>
+              <button type="button" class="reel-action-btn archive-btn" title="归档此卷" data-archive-reel="${reel.id}">📦</button>
+              `
+              }
               <button type="button" class="reel-action-btn delete-btn" title="删除此卷" data-delete-reel="${reel.id}">🗑</button>
             </div>
           </div>
         `;
       })
-      .join("") || `<div class="reel-card-empty">还没有胶片卷，请在上方新建。</div>`;
+      .join("") ||
+    `<div class="reel-card-empty">${
+      reelListTab === "active" ? "还没有胶片卷，请在上方新建。" : "暂无归档的胶片卷。"
+    }</div>`;
 }
 
 function shiftToColor(shift) {
@@ -1631,6 +1744,7 @@ function createReel() {
     id: crypto.randomUUID(),
     title: name,
     createdAt: Date.now(),
+    archived: false,
     segments: [],
     checklist: []
   };
@@ -1666,6 +1780,7 @@ function duplicateReel(reelId) {
   copy.id = crypto.randomUUID();
   copy.title = `${reel.title} 副本`;
   copy.createdAt = Date.now();
+  copy.archived = false;
   copy.segments = copy.segments.map((seg) => ({ ...seg, id: crypto.randomUUID() }));
   copy.checklist = copy.checklist.map((item) => ({ ...item, id: crypto.randomUUID() }));
   history.execute(new DuplicateReelCommand(reelId, copy));
@@ -1674,8 +1789,8 @@ function duplicateReel(reelId) {
 function deleteReel(reelId) {
   const reel = state.reels.find((r) => r.id === reelId);
   if (!reel) return;
-  if (state.reels.length <= 1) {
-    alert("至少需要保留一个胶片卷。");
+  if (!reel.archived && state.reels.filter((r) => !r.archived).length <= 1) {
+    alert("至少需要保留一个活跃的胶片卷。");
     return;
   }
   if (!confirm(`确定要删除胶片卷「${reel.title}」吗？可使用撤销恢复。`)) return;
@@ -1683,6 +1798,28 @@ function deleteReel(reelId) {
   const reelIndex = state.reels.findIndex((r) => r.id === reelId);
   const previousActiveId = state.activeReelId;
   history.execute(new DeleteReelCommand(reel, reelIndex, previousActiveId));
+}
+
+function archiveReel(reelId) {
+  const reel = state.reels.find((r) => r.id === reelId);
+  if (!reel || reel.archived) return;
+  const activeCount = state.reels.filter((r) => !r.archived).length;
+  if (activeCount <= 1) {
+    alert("至少需要保留一个活跃的胶片卷。");
+    return;
+  }
+  if (!confirm(`确定要归档胶片卷「${reel.title}」吗？归档后将不在默认列表中显示，可在归档标签页恢复。`)) return;
+
+  const previousActiveId = state.activeReelId;
+  history.execute(new ArchiveReelCommand(reelId, previousActiveId, true));
+}
+
+function restoreReel(reelId) {
+  const reel = state.reels.find((r) => r.id === reelId);
+  if (!reel || !reel.archived) return;
+
+  const previousActiveId = state.activeReelId;
+  history.execute(new ArchiveReelCommand(reelId, previousActiveId, false));
 }
 
 els.reelSwitcherBtn.addEventListener("click", openReelModal);
@@ -1702,6 +1839,8 @@ els.reelList.addEventListener("click", (event) => {
   const renameBtn = event.target.closest("[data-rename-reel]");
   const duplicateBtn = event.target.closest("[data-duplicate-reel]");
   const deleteBtn = event.target.closest("[data-delete-reel]");
+  const archiveBtn = event.target.closest("[data-archive-reel]");
+  const restoreBtn = event.target.closest("[data-restore-reel]");
   const card = event.target.closest(".reel-card");
 
   if (switchBtn) {
@@ -1713,16 +1852,35 @@ els.reelList.addEventListener("click", (event) => {
   } else if (duplicateBtn) {
     event.stopPropagation();
     duplicateReel(duplicateBtn.dataset.duplicateReel);
+  } else if (archiveBtn) {
+    event.stopPropagation();
+    archiveReel(archiveBtn.dataset.archiveReel);
+  } else if (restoreBtn) {
+    event.stopPropagation();
+    restoreReel(restoreBtn.dataset.restoreReel);
   } else if (deleteBtn) {
     event.stopPropagation();
     deleteReel(deleteBtn.dataset.deleteReel);
   } else if (card && card.dataset.reelId) {
     event.stopPropagation();
-    if (card.dataset.reelId !== state.activeReelId) {
+    const reel = state.reels.find((r) => r.id === card.dataset.reelId);
+    if (reel && !reel.archived && card.dataset.reelId !== state.activeReelId) {
       switchReel(card.dataset.reelId);
     }
   }
 });
+
+if (els.reelTabBar) {
+  els.reelTabBar.addEventListener("click", (event) => {
+    const tab = event.target.closest(".reel-tab");
+    if (!tab) return;
+    const tabType = tab.dataset.reelTab;
+    if (tabType && tabType !== reelListTab) {
+      reelListTab = tabType;
+      renderReelList();
+    }
+  });
+}
 
 els.reelTitle.addEventListener("input", () => {
   const reel = getActiveReel();
@@ -2286,7 +2444,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 const REQUIRED_REEL_FIELDS = ["id", "title", "createdAt", "segments", "checklist"];
 const REQUIRED_SEGMENT_FIELDS = ["id", "code", "duration", "shift", "damage", "note", "thumb"];
 const REQUIRED_TEMPLATE_FIELDS = ["id", "name", "duration", "shift", "damage", "notePrefix"];
@@ -2330,7 +2488,9 @@ function resetBackupImportState() {
 
 function updateBackupExportInfo() {
   const totalSegments = state.reels.reduce((sum, r) => sum + r.segments.length, 0);
-  els.backupReelCount.textContent = `${state.reels.length} 卷`;
+  const activeReels = state.reels.filter((r) => !r.archived).length;
+  const archivedReels = state.reels.filter((r) => r.archived).length;
+  els.backupReelCount.textContent = `${state.reels.length} 卷（活跃 ${activeReels} / 归档 ${archivedReels}）`;
   els.backupSegmentCount.textContent = `${totalSegments} 个`;
   els.backupTemplateCount.textContent = `${state.templates.length} 个`;
 }
@@ -2366,7 +2526,7 @@ function validateBackupStructure(data) {
     errors.push("缺少 version 字段，无法识别备份版本");
   } else if (typeof data.version !== "number") {
     errors.push("version 字段必须是数字类型");
-  } else if (data.version !== BACKUP_VERSION) {
+  } else if (data.version < 2 || data.version > BACKUP_VERSION) {
     errors.push(`备份版本不兼容：当前应用版本 v${BACKUP_VERSION}，备份文件版本 v${data.version}`);
   }
 
@@ -2449,6 +2609,25 @@ function validateBackupStructure(data) {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+function migrateBackupData(data) {
+  if (!data || data.version === BACKUP_VERSION) return data;
+
+  const migrated = structuredClone(data);
+
+  if (migrated.version === 2) {
+    if (Array.isArray(migrated.reels)) {
+      migrated.reels.forEach((reel) => {
+        if (reel.archived === undefined) {
+          reel.archived = false;
+        }
+      });
+    }
+    migrated.version = 3;
+  }
+
+  return migrated;
 }
 
 function detectIdConflicts(backupData) {
@@ -2556,7 +2735,9 @@ function handleBackupFileSelect(event) {
 }
 
 function validateAndPreviewBackup(data) {
-  const validation = validateBackupStructure(data);
+  const migratedData = migrateBackupData(data);
+
+  const validation = validateBackupStructure(migratedData);
 
   if (!validation.valid) {
     showBackupErrors(validation.errors);
@@ -2568,7 +2749,12 @@ function validateAndPreviewBackup(data) {
 
   els.backupErrors.style.display = "none";
 
-  const internalDupReport = detectInternalDuplicateIds(data);
+  if (data.version !== BACKUP_VERSION) {
+    const warnMsgs = [`检测到旧版备份文件（v${data.version}），已自动升级为 v${BACKUP_VERSION}，所有胶片卷默认设为未归档状态。`];
+    showBackupWarnings(warnMsgs);
+  }
+
+  const internalDupReport = detectInternalDuplicateIds(migratedData);
   if (internalDupReport.hasDuplicates) {
     const dupWarnings = ["备份文件内部存在重复 ID，数据可能已损坏："];
     const parts = [];
@@ -2579,23 +2765,25 @@ function validateAndPreviewBackup(data) {
     dupWarnings.push(`共 ${internalDupReport.totalDuplicates} 个重复 ID（${parts.join("、")}）。`);
     dupWarnings.push("恢复时将自动为重复 ID 生成新的唯一标识，避免数据冲突。");
     showBackupWarnings(dupWarnings);
-  } else {
+  } else if (data.version === BACKUP_VERSION) {
     els.backupWarnings.style.display = "none";
   }
 
-  const totalSegments = data.reels.reduce((sum, r) => sum + (r.segments?.length || 0), 0);
-  const exportDate = data.exportedAt ? new Date(data.exportedAt) : null;
+  const totalSegments = migratedData.reels.reduce((sum, r) => sum + (r.segments?.length || 0), 0);
+  const activeReels = migratedData.reels.filter((r) => !r.archived).length;
+  const archivedReels = migratedData.reels.filter((r) => r.archived).length;
+  const exportDate = migratedData.exportedAt ? new Date(migratedData.exportedAt) : null;
   const exportTimeStr = exportDate
     ? `${exportDate.getFullYear()}/${String(exportDate.getMonth() + 1).padStart(2, "0")}/${String(exportDate.getDate()).padStart(2, "0")} ${String(exportDate.getHours()).padStart(2, "0")}:${String(exportDate.getMinutes()).padStart(2, "0")}`
     : "未知";
 
-  els.backupVersionBadge.textContent = `v${data.version}`;
-  els.previewReelCount.textContent = `${data.reels.length} 卷`;
+  els.backupVersionBadge.textContent = `v${migratedData.version}`;
+  els.previewReelCount.textContent = `${migratedData.reels.length} 卷（活跃 ${activeReels} / 归档 ${archivedReels}）`;
   els.previewSegmentCount.textContent = `${totalSegments} 个`;
-  els.previewTemplateCount.textContent = `${data.templates.length} 个`;
+  els.previewTemplateCount.textContent = `${migratedData.templates.length} 个`;
   els.previewExportTime.textContent = exportTimeStr;
 
-  backupConflictReport = detectIdConflicts(data);
+  backupConflictReport = detectIdConflicts(migratedData);
   if (backupConflictReport.hasConflicts) {
     els.backupConflictInfo.style.display = "block";
     const parts = [];
@@ -2608,7 +2796,7 @@ function validateAndPreviewBackup(data) {
     els.backupConflictInfo.style.display = "none";
   }
 
-  backupParsedData = data;
+  backupParsedData = migratedData;
   els.backupPreviewWrap.style.display = "flex";
   els.backupConfirmBtn.disabled = false;
 }
@@ -2696,9 +2884,12 @@ function applyBackupOverwrite(backupData) {
       templates: normalizedData.templates
     };
 
-    const reelIds = newState.reels.map((r) => r.id);
-    if (!reelIds.includes(newState.activeReelId) && reelIds.length > 0) {
-      newState.activeReelId = reelIds[0];
+    const activeReel = newState.reels.find((r) => r.id === newState.activeReelId && !r.archived);
+    if (!activeReel) {
+      const firstActive = newState.reels.find((r) => !r.archived);
+      if (firstActive) {
+        newState.activeReelId = firstActive.id;
+      }
     }
 
     state = newState;

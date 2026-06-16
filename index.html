@@ -280,6 +280,10 @@
           <span>胶片卷列表</span>
           <span class="reel-list-tip" id="reelListTip">共 0 卷</span>
         </div>
+        <div class="reel-tab-bar">
+          <button type="button" class="reel-tab active" data-reel-tab="active">当前</button>
+          <button type="button" class="reel-tab" data-reel-tab="archived">归档</button>
+        </div>
         <div class="reel-list" id="reelList"></div>
       </div>
     </div>
@@ -461,7 +465,7 @@
             </div>
             <div class="backup-info-item">
               <span class="backup-info-label">数据版本</span>
-              <span class="backup-info-value">v2</span>
+              <span class="backup-info-value">v3</span>
             </div>
           </div>
           <button class="primary backup-export-btn" id="backupExportBtn">导出 JSON 备份文件</button>
