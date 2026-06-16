@@ -787,6 +787,7 @@ const els = {
   importPreviewWrap: document.querySelector("#importPreviewWrap"),
   importPreviewStats: document.querySelector("#importPreviewStats"),
   importPreviewBody: document.querySelector("#importPreviewBody"),
+  importSelectAll: document.querySelector("#importSelectAll"),
   importConfirmBtn: document.querySelector("#importConfirmBtn"),
   importCancelBtn: document.querySelector("#importCancelBtn"),
   timelineBar: document.querySelector("#timelineBar"),
@@ -1763,6 +1764,10 @@ function openImportModal() {
   els.importErrors.style.display = "none";
   els.importPreviewWrap.style.display = "none";
   els.importConfirmBtn.disabled = true;
+  els.importConfirmBtn.textContent = "确认导入有效行";
+  els.importSelectAll.checked = false;
+  els.importSelectAll.indeterminate = false;
+  els.importSelectAll.disabled = true;
   importParsedRows = [];
 }
 
@@ -1843,7 +1848,9 @@ function validateImportRows(rows) {
         damage: "",
         note: "",
         status: "error",
-        statusText: row.parseError
+        statusText: row.parseError,
+        selected: false,
+        selectable: false
       });
       continue;
     }
@@ -1886,7 +1893,9 @@ function validateImportRows(rows) {
       _durationNum: isNaN(durationNum) ? 0 : durationNum,
       errors,
       status: errors.length > 0 ? "error" : "ok",
-      statusText: errors.join("；")
+      statusText: errors.join("；"),
+      selected: errors.length === 0,
+      selectable: errors.length === 0
     });
   }
 
@@ -1899,9 +1908,13 @@ function validateImportRows(rows) {
     if (duplicateCodes.includes(row.code)) {
       row.status = "dup";
       row.statusText = "CSV 内编号重复";
+      row.selected = false;
+      row.selectable = true;
     } else if (existingCodes.includes(row.code)) {
       row.status = "dup";
       row.statusText = "与当前清单编号重复";
+      row.selected = false;
+      row.selectable = true;
     }
   }
 
@@ -1912,34 +1925,71 @@ function renderImportPreview(validated) {
   const okCount = validated.filter((r) => r.status === "ok").length;
   const dupCount = validated.filter((r) => r.status === "dup").length;
   const errCount = validated.filter((r) => r.status === "error").length;
+  const selectedCount = validated.filter((r) => r.selected).length;
+  const skippedCount = validated.filter((r) => !r.selected && r.selectable).length;
 
-  els.importPreviewStats.textContent = `有效 ${okCount} 行 · 重复 ${dupCount} 行 · 错误 ${errCount} 行`;
-  els.importConfirmBtn.disabled = okCount === 0;
+  const reel = getActiveReel();
+  const reelSegmentCount = reel ? reel.segments.length : 0;
+  const appendPosition = reelSegmentCount + 1;
+
+  els.importPreviewStats.innerHTML = `
+    <span style="margin-right:16px">有效 ${okCount} · 重复 ${dupCount} · 错误 ${errCount}</span>
+    <span style="margin-right:16px;color:var(--green);font-weight:900">✓ 选中 ${selectedCount}</span>
+    <span style="margin-right:16px;color:var(--muted)">跳过 ${skippedCount + errCount}</span>
+    <span>将追加到第 ${appendPosition} 条${selectedCount > 1 ? `–${appendPosition + selectedCount - 1} 条` : ""}</span>
+  `;
+
+  const selectableRows = validated.filter((r) => r.selectable);
+  const allSelectableSelected = selectableRows.length > 0 && selectableRows.every((r) => r.selected);
+  els.importSelectAll.checked = allSelectableSelected;
+  els.importSelectAll.indeterminate = selectedCount > 0 && !allSelectableSelected;
+  els.importSelectAll.disabled = selectableRows.length === 0;
+
+  els.importConfirmBtn.disabled = selectedCount === 0;
+  els.importConfirmBtn.textContent = selectedCount > 0 ? `确认导入 ${selectedCount} 条` : "确认导入有效行";
 
   els.importPreviewBody.innerHTML = validated
-    .map((row) => {
+    .map((row, idx) => {
       const rowClass = row.status === "error" ? "row-error" : row.status === "dup" ? "row-dup" : "row-ok";
+      const selectedClass = row.selected && row.selectable ? "row-selected" : "";
       const statusClass = row.status === "error" ? "import-status-err" : row.status === "dup" ? "import-status-warn" : "import-status-ok";
       const statusLabel = row.status === "ok" ? "✓ 有效" : row.status === "dup" ? "⚠ 重复" : "✗ 错误";
+      const checkboxDisabled = !row.selectable ? "disabled" : "";
+      const checkboxChecked = row.selected ? "checked" : "";
+      const dupHint = row.status === "dup" && row.selected ? `<br/><span style="font-weight:400;font-size:11px;color:var(--green)">导入时将自动分配新编号</span>` : "";
       return `
-        <tr class="${rowClass}">
+        <tr class="${rowClass} ${selectedClass}">
+          <td><input type="checkbox" class="import-row-check" data-idx="${idx}" ${checkboxChecked} ${checkboxDisabled} /></td>
           <td>${row.lineNum}</td>
           <td>${escapeHtml(row.code)}</td>
           <td>${escapeHtml(row.duration)}</td>
           <td>${escapeHtml(row.shift)}</td>
           <td>${escapeHtml(row.damage)}</td>
           <td>${escapeHtml(row.note)}</td>
-          <td class="${statusClass}">${statusLabel}${row.statusText && row.status !== "ok" ? `<br/><span style="font-weight:400;font-size:11px">${escapeHtml(row.statusText)}</span>` : ""}</td>
+          <td class="${statusClass}">${statusLabel}${row.statusText && row.status !== "ok" ? `<br/><span style="font-weight:400;font-size:11px">${escapeHtml(row.statusText)}</span>` : ""}${dupHint}</td>
         </tr>
       `;
     })
     .join("");
 
+  els.importPreviewBody.querySelectorAll(".import-row-check").forEach((cb) => {
+    cb.addEventListener("change", (e) => {
+      const idx = Number(e.target.dataset.idx);
+      if (idx >= 0 && idx < importParsedRows.length) {
+        importParsedRows[idx].selected = e.target.checked;
+        renderImportPreview(importParsedRows);
+      }
+    });
+  });
+
   els.importPreviewWrap.style.display = "flex";
 
   const errorItems = [];
-  if (errCount > 0) errorItems.push(`${errCount} 行存在解析或数据错误，将跳过`);
-  if (dupCount > 0) errorItems.push(`${dupCount} 行编号重复（CSV 内或与清单冲突），将跳过`);
+  if (errCount > 0) errorItems.push(`${errCount} 行存在解析或数据错误，无法勾选`);
+  const dupNotSelected = validated.filter((r) => r.status === "dup" && !r.selected).length;
+  if (dupNotSelected > 0) errorItems.push(`${dupNotSelected} 行编号重复，默认未选中，可手动勾选后用新编号导入`);
+  const dupSelected = validated.filter((r) => r.status === "dup" && r.selected).length;
+  if (dupSelected > 0) errorItems.push(`${dupSelected} 行重复编号已勾选，导入时将自动分配新编号`);
 
   if (errorItems.length > 0) {
     els.importErrors.innerHTML = `<h4>⚠ 导入注意事项</h4><ul>${errorItems.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
@@ -1990,24 +2040,47 @@ function doParseAndPreview(text) {
   renderImportPreview(validated);
 }
 
+function generateUniqueCode(baseCode, existingCodesSet, selectedCodes, selfIdx) {
+  if (!existingCodesSet.has(baseCode) && !selectedCodes.some((c, i) => c === baseCode && i !== selfIdx)) {
+    return baseCode;
+  }
+  let suffix = 2;
+  while (true) {
+    const candidate = `${baseCode}-${suffix}`;
+    if (!existingCodesSet.has(candidate) && !selectedCodes.includes(candidate)) {
+      return candidate;
+    }
+    suffix++;
+  }
+}
+
 function handleImportConfirm() {
   const reel = getActiveReel();
   if (!reel) return;
 
-  const okRows = importParsedRows.filter((r) => r.status === "ok");
-  if (okRows.length === 0) return;
+  const selectedRows = importParsedRows.filter((r) => r.selected && r.selectable);
+  if (selectedRows.length === 0) return;
 
-  if (!confirm(`确认将 ${okRows.length} 条有效片段导入当前放映清单「${reel.title}」？重复和错误行将跳过。可使用撤销恢复。`)) return;
+  if (!confirm(`确认将 ${selectedRows.length} 条选中片段导入当前放映清单「${reel.title}」？${selectedRows.some(r => r.status === "dup") ? "重复行将自动分配新编号。" : ""}可使用撤销恢复。`)) return;
 
-  const newSegments = okRows.map((row) => ({
-    id: crypto.randomUUID(),
-    code: row.code,
-    duration: row._durationNum,
-    shift: row.shift,
-    damage: row.damage,
-    note: row.note,
-    thumb: ""
-  }));
+  const existingCodesSet = new Set(reel.segments.map((s) => s.code));
+  const newCodes = [];
+  const newSegments = selectedRows.map((row, idx) => {
+    let finalCode = row.code;
+    if (row.status === "dup") {
+      finalCode = generateUniqueCode(row.code, existingCodesSet, newCodes, idx);
+    }
+    newCodes.push(finalCode);
+    return {
+      id: crypto.randomUUID(),
+      code: finalCode,
+      duration: row._durationNum,
+      shift: row.shift,
+      damage: row.damage,
+      note: row.note,
+      thumb: ""
+    };
+  });
 
   history.execute(new BatchImportCommand(reel.id, newSegments, reel.segments.length));
   closeImportModal();
@@ -2019,6 +2092,18 @@ els.importModalBackdrop.addEventListener("click", closeImportModal);
 els.importCancelBtn.addEventListener("click", closeImportModal);
 els.importParseBtn.addEventListener("click", handleImportParse);
 els.importConfirmBtn.addEventListener("click", handleImportConfirm);
+
+els.importSelectAll.addEventListener("change", (e) => {
+  const checked = e.target.checked;
+  for (const row of importParsedRows) {
+    if (row.selectable) {
+      row.selected = checked;
+    }
+  }
+  if (importParsedRows.length > 0) {
+    renderImportPreview(importParsedRows);
+  }
+});
 
 els.importCsvFile.addEventListener("change", () => {
   const file = els.importCsvFile.files[0];

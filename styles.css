@@ -1505,6 +1505,25 @@ label {
   background: transparent;
 }
 
+.import-preview-table tr.row-selected {
+  background: rgba(52, 125, 137, 0.08) !important;
+}
+
+.import-preview-table th input[type="checkbox"],
+.import-preview-table td input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--teal);
+}
+
+.import-preview-table td input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.import-preview-head #importPreviewStats {
+  line-height: 1.6;
+}
+
 .import-status-ok {
   color: var(--green);
   font-weight: 800;
