@@ -831,7 +831,7 @@ label {
 
 .drawer-actions {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 10px;
   margin-top: 4px;
 }
@@ -847,6 +847,19 @@ label {
   background: rgba(181, 77, 72, 0.16);
   border-color: var(--red);
   color: var(--red);
+}
+
+#drawerSaveTemplate {
+  background: linear-gradient(135deg, rgba(52, 125, 137, 0.08), rgba(52, 125, 137, 0.03));
+  border-color: rgba(52, 125, 137, 0.35);
+  color: var(--cyan);
+  font-weight: 800;
+}
+
+#drawerSaveTemplate:hover {
+  background: linear-gradient(135deg, rgba(52, 125, 137, 0.16), rgba(52, 125, 137, 0.06));
+  border-color: var(--cyan);
+  color: var(--cyan);
 }
 
 @media (max-width: 780px) {
@@ -1806,6 +1819,170 @@ label {
 
 .backup-btn:hover {
   background: linear-gradient(135deg, rgba(52, 125, 137, 0.18), rgba(52, 125, 137, 0.08));
+}
+
+.save-tpl-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 36, 40, 0.5);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
+  z-index: 1250;
+}
+
+.save-tpl-modal-backdrop.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.save-tpl-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 60px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(33, 38, 42, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s ease;
+  z-index: 1251;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.save-tpl-modal.open {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.save-tpl-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(181, 77, 72, 0.06), rgba(52, 125, 137, 0.06));
+}
+
+.save-tpl-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.save-tpl-modal-header h2::before {
+  content: "📋";
+  font-size: 20px;
+}
+
+.save-tpl-modal-close {
+  width: 38px;
+  height: 36px;
+  padding: 0;
+  font-size: 22px;
+  line-height: 1;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.save-tpl-modal-close:hover {
+  border-color: var(--line);
+  color: var(--ink);
+  background: #fffdf7;
+}
+
+.save-tpl-modal-body {
+  padding: 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.save-tpl-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.save-tpl-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.save-tpl-form input[type="text"],
+.save-tpl-form input:not([type]) {
+  padding: 9px 11px;
+  font-size: 14px;
+  font-family: inherit;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fffdf7;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.save-tpl-form input:focus {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 3px rgba(52, 125, 137, 0.15);
+}
+
+.save-tpl-preview {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  background: rgba(255, 253, 247, 0.55);
+}
+
+.save-tpl-preview-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.save-tpl-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.save-tpl-preview-value {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.save-tpl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.save-tpl-actions button[type="submit"] {
+  min-width: 140px;
 }
 
 .backup-modal-backdrop {

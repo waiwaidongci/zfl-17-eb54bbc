@@ -716,6 +716,7 @@ let dragStartIndex = -1;
 let dragReelId = null;
 let activeDrawerSegmentId = null;
 let drawerThumbDataUrl = "";
+let pendingTemplateSegmentData = null;
 
 const els = {
   reelSwitcherBtn: document.querySelector("#reelSwitcherBtn"),
@@ -820,7 +821,20 @@ const els = {
   riskSummaryBar: document.querySelector("#riskSummaryBar"),
   riskDetailList: document.querySelector("#riskDetailList"),
 
-  reportBtn: document.querySelector("#reportBtn")
+  reportBtn: document.querySelector("#reportBtn"),
+
+  drawerSaveTemplate: document.querySelector("#drawerSaveTemplate"),
+  saveTplModalBackdrop: document.querySelector("#saveTplModalBackdrop"),
+  saveTplModal: document.querySelector("#saveTplModal"),
+  saveTplModalClose: document.querySelector("#saveTplModalClose"),
+  saveTplForm: document.querySelector("#saveTplForm"),
+  saveTplNameInput: document.querySelector("#saveTplNameInput"),
+  saveTplNoteInput: document.querySelector("#saveTplNoteInput"),
+  saveTplPreviewDuration: document.querySelector("#saveTplPreviewDuration"),
+  saveTplPreviewShift: document.querySelector("#saveTplPreviewShift"),
+  saveTplPreviewDamage: document.querySelector("#saveTplPreviewDamage"),
+  saveTplPreviewNote: document.querySelector("#saveTplPreviewNote"),
+  saveTplCancelBtn: document.querySelector("#saveTplCancelBtn")
 };
 
 function getFilteredSegments() {
@@ -897,6 +911,7 @@ function renderList() {
               <p class="segment-note">${escapeHtml(item.note || "没有备注。")}</p>
             </div>
             <div class="segment-actions">
+              <button type="button" title="存为模板" data-save-template="${item.id}">📋</button>
               <button type="button" title="上移" data-move-up="${item.id}">↑</button>
               <button type="button" title="下移" data-move-down="${item.id}">↓</button>
               <button type="button" title="删除" data-delete="${item.id}">×</button>
@@ -1074,6 +1089,66 @@ function addTemplate(event) {
 
 function deleteTemplate(id) {
   state.templates = state.templates.filter((t) => t.id !== id);
+  renderAll();
+}
+
+function openSaveTemplateModal(segmentId) {
+  const reel = getActiveReel();
+  if (!reel) return;
+  const segment = reel.segments.find((s) => s.id === segmentId);
+  if (!segment) return;
+
+  pendingTemplateSegmentData = {
+    id: segment.id,
+    code: segment.code,
+    duration: segment.duration,
+    shift: segment.shift,
+    damage: segment.damage,
+    note: segment.note || ""
+  };
+
+  els.saveTplNameInput.value = `${segment.code} 片段配置`;
+  els.saveTplNoteInput.value = segment.note || "";
+  els.saveTplPreviewDuration.textContent = formatDuration(segment.duration);
+  els.saveTplPreviewShift.textContent = segment.shift;
+  els.saveTplPreviewDamage.textContent = segment.damage;
+  els.saveTplPreviewNote.textContent = segment.note ? escapeHtml(segment.note) : "（无）";
+
+  els.saveTplModalBackdrop.classList.add("open");
+  els.saveTplModal.classList.add("open");
+  els.saveTplModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  setTimeout(() => els.saveTplNameInput.focus(), 50);
+}
+
+function closeSaveTemplateModal() {
+  pendingTemplateSegmentData = null;
+  els.saveTplModalBackdrop.classList.remove("open");
+  els.saveTplModal.classList.remove("open");
+  els.saveTplModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  els.saveTplForm.reset();
+}
+
+function saveTemplateFromSegment(event) {
+  event.preventDefault();
+  if (!pendingTemplateSegmentData) return;
+
+  const name = els.saveTplNameInput.value.trim();
+  if (!name) return;
+
+  const notePrefix = els.saveTplNoteInput.value.trim();
+
+  state.templates.push({
+    id: crypto.randomUUID(),
+    name,
+    duration: Number(pendingTemplateSegmentData.duration),
+    shift: pendingTemplateSegmentData.shift,
+    damage: pendingTemplateSegmentData.damage,
+    notePrefix
+  });
+
+  closeSaveTemplateModal();
   renderAll();
 }
 
@@ -1622,11 +1697,17 @@ els.segmentForm.addEventListener("submit", addSegment);
 els.exportBtn.addEventListener("click", exportList);
 
 els.segmentList.addEventListener("click", (event) => {
+  const saveTpl = event.target.closest("[data-save-template]");
   const up = event.target.closest("[data-move-up]");
   const down = event.target.closest("[data-move-down]");
   const remove = event.target.closest("[data-delete]");
   const view = event.target.closest("[data-view]");
 
+  if (saveTpl) {
+    event.stopPropagation();
+    openSaveTemplateModal(saveTpl.dataset.saveTemplate);
+    return;
+  }
   if (up) {
     event.stopPropagation();
     moveSegment(up.dataset.moveUp, -1);
@@ -1649,7 +1730,7 @@ els.segmentList.addEventListener("click", (event) => {
     const segment = reel.segments[segmentIndex];
     history.execute(new DeleteSegmentCommand(reel.id, segment, segmentIndex));
   }
-  if (view && !up && !down && !remove) {
+  if (view && !up && !down && !remove && !saveTpl) {
     openDrawer(view.dataset.view);
   }
 });
@@ -1739,6 +1820,14 @@ els.drawerClose.addEventListener("click", closeDrawer);
 els.drawerBackdrop.addEventListener("click", closeDrawer);
 els.drawerForm.addEventListener("submit", saveDrawerEdits);
 els.drawerDelete.addEventListener("click", deleteFromDrawer);
+els.drawerSaveTemplate.addEventListener("click", () => {
+  if (activeDrawerSegmentId) openSaveTemplateModal(activeDrawerSegmentId);
+});
+
+els.saveTplModalClose.addEventListener("click", closeSaveTemplateModal);
+els.saveTplModalBackdrop.addEventListener("click", closeSaveTemplateModal);
+els.saveTplCancelBtn.addEventListener("click", closeSaveTemplateModal);
+els.saveTplForm.addEventListener("submit", saveTemplateFromSegment);
 
 els.drawerThumbInput.addEventListener("change", async (event) => {
   const file = event.target.files[0];

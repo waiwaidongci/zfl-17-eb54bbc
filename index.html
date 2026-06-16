@@ -327,6 +327,7 @@
           </label>
           <div class="drawer-actions">
             <button type="submit" class="primary">保存修改</button>
+            <button type="button" id="drawerSaveTemplate" title="将此片段的配置保存为模板">存为模板</button>
             <button type="button" id="drawerDelete" class="drawer-delete-btn">删除此片段</button>
           </div>
         </form>
@@ -379,6 +380,49 @@
             <button type="button" id="importCancelBtn">取消</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="save-tpl-modal-backdrop" id="saveTplModalBackdrop"></div>
+    <div class="save-tpl-modal" id="saveTplModal" aria-hidden="true">
+      <div class="save-tpl-modal-header">
+        <h2>从片段保存为模板</h2>
+        <button type="button" class="save-tpl-modal-close" id="saveTplModalClose" title="关闭">×</button>
+      </div>
+      <div class="save-tpl-modal-body">
+        <p class="panel-hint">以下配置来自当前片段，确认名称后保存为新模板。</p>
+        <form id="saveTplForm" class="save-tpl-form">
+          <label>
+            模板名称
+            <input id="saveTplNameInput" required placeholder="例：近景破损片（参考自 A-014）" />
+          </label>
+          <div class="save-tpl-preview">
+            <div class="save-tpl-preview-item">
+              <span class="save-tpl-preview-label">时长</span>
+              <span class="save-tpl-preview-value" id="saveTplPreviewDuration">—</span>
+            </div>
+            <div class="save-tpl-preview-item">
+              <span class="save-tpl-preview-label">颜色偏移</span>
+              <span class="save-tpl-preview-value" id="saveTplPreviewShift">—</span>
+            </div>
+            <div class="save-tpl-preview-item">
+              <span class="save-tpl-preview-label">破损情况</span>
+              <span class="save-tpl-preview-value" id="saveTplPreviewDamage">—</span>
+            </div>
+            <div class="save-tpl-preview-item">
+              <span class="save-tpl-preview-label">备注前缀</span>
+              <span class="save-tpl-preview-value" id="saveTplPreviewNote">—</span>
+            </div>
+          </div>
+          <label>
+            备注前缀（可编辑）
+            <input id="saveTplNoteInput" placeholder="留空则不使用前缀" />
+          </label>
+          <div class="save-tpl-actions">
+            <button type="submit" class="primary">确认保存模板</button>
+            <button type="button" id="saveTplCancelBtn">取消</button>
+          </div>
+        </form>
       </div>
     </div>
 
