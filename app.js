@@ -650,7 +650,8 @@ function migrateLegacyState(saved) {
   if (Array.isArray(saved.checklist)) {
     legacyReel.checklist = saved.checklist.map((item) => ({
       ...item,
-      id: item.id || crypto.randomUUID()
+      id: item.id || crypto.randomUUID(),
+      priority: item.priority || "normal"
     }));
   }
   if (Array.isArray(saved.templates)) {
@@ -688,13 +689,24 @@ function loadState() {
   }
 
   const defaults = createDefaultWorkspace();
-  return {
+  const result = {
     ...defaults,
     ...parsed,
     templates: Array.isArray(parsed.templates) && parsed.templates.length > 0
       ? parsed.templates
       : defaults.templates
   };
+
+  result.reels.forEach((reel) => {
+    if (Array.isArray(reel.checklist)) {
+      reel.checklist = reel.checklist.map((item) => ({
+        priority: "normal",
+        ...item
+      }));
+    }
+  });
+
+  return result;
 }
 
 function saveState() {
@@ -762,6 +774,7 @@ const els = {
   templateCount: document.querySelector("#templateCount"),
   checklistForm: document.querySelector("#checklistForm"),
   checklistInput: document.querySelector("#checklistInput"),
+  checklistPriority: document.querySelector("#checklistPriority"),
   autoChecklist: document.querySelector("#autoChecklist"),
   manualChecklist: document.querySelector("#manualChecklist"),
   checklistStats: document.querySelector("#checklistStats"),
@@ -1152,6 +1165,12 @@ function saveTemplateFromSegment(event) {
   renderAll();
 }
 
+function riskScoreToPriority(score) {
+  if (score >= 7) return "urgent";
+  if (score >= 4) return "important";
+  return "normal";
+}
+
 function syncAutoChecklist() {
   const reel = getActiveReel();
   if (!reel) return;
@@ -1168,8 +1187,11 @@ function syncAutoChecklist() {
   problemSegments.forEach((seg) => {
     const existing = existingAutoMap[seg.id];
     const reasons = [seg.shift !== "正常" ? seg.shift : "", seg.damage !== "完好" ? seg.damage : ""].filter(Boolean).join("、");
+    const risk = calculateSegmentRisk(seg);
+    const priority = riskScoreToPriority(risk.score);
     if (existing) {
       existing.text = `${seg.code}（${reasons}）`;
+      existing.priority = priority;
       syncedAutoItems.push(existing);
     } else {
       syncedAutoItems.push({
@@ -1177,7 +1199,8 @@ function syncAutoChecklist() {
         text: `${seg.code}（${reasons}）`,
         source: "auto",
         segmentId: seg.id,
-        completed: false
+        completed: false,
+        priority
       });
     }
   });
@@ -1191,14 +1214,17 @@ function addChecklistItem(event) {
   if (!reel) return;
   const text = els.checklistInput.value.trim();
   if (!text) return;
+  const priority = els.checklistPriority?.value || "normal";
   reel.checklist.push({
     id: crypto.randomUUID(),
     text,
     source: "manual",
     segmentId: null,
-    completed: false
+    completed: false,
+    priority
   });
   els.checklistForm.reset();
+  els.checklistPriority.value = "normal";
   renderAll();
 }
 
@@ -1217,6 +1243,20 @@ function deleteChecklistItem(id) {
   renderAll();
 }
 
+function getPriorityLabel(priority) {
+  const labels = { urgent: "紧急", important: "重要", normal: "普通" };
+  return labels[priority] || "普通";
+}
+
+function sortByPriority(items) {
+  const priorityOrder = { urgent: 0, important: 1, normal: 2 };
+  return [...items].sort((a, b) => {
+    const orderA = priorityOrder[a.priority] ?? 2;
+    const orderB = priorityOrder[b.priority] ?? 2;
+    return orderA - orderB;
+  });
+}
+
 function renderChecklist() {
   const reel = getActiveReel();
   if (!reel) {
@@ -1225,8 +1265,8 @@ function renderChecklist() {
     els.manualChecklist.innerHTML = `<p class="empty">无胶片卷。</p>`;
     return;
   }
-  const autoItems = reel.checklist.filter((item) => item.source === "auto");
-  const manualItems = reel.checklist.filter((item) => item.source === "manual");
+  const autoItems = sortByPriority(reel.checklist.filter((item) => item.source === "auto"));
+  const manualItems = sortByPriority(reel.checklist.filter((item) => item.source === "manual"));
   const completed = reel.checklist.filter((item) => item.completed).length;
   const total = reel.checklist.length;
   els.checklistStats.textContent = `${completed} / ${total} 项已完成`;
@@ -1235,13 +1275,16 @@ function renderChecklist() {
     autoItems
       .map((item) => {
         const checkedClass = item.completed ? "checked" : "";
+        const priorityClass = `priority-${item.priority || "normal"}-border`;
+        const priorityBadgeClass = `priority-badge priority-${item.priority || "normal"}`;
         return `
-          <div class="checklist-item auto-item ${checkedClass}" data-check-id="${item.id}">
+          <div class="checklist-item auto-item ${checkedClass} ${priorityClass}" data-check-id="${item.id}">
             <label class="checklist-checkbox">
               <input type="checkbox" ${item.completed ? "checked" : ""} data-toggle-check="${item.id}" />
               <span class="checkmark"></span>
             </label>
             <span class="checklist-text">${escapeHtml(item.text)}</span>
+            <span class="${priorityBadgeClass}">${getPriorityLabel(item.priority)}</span>
             <span class="checklist-badge auto-badge">自动</span>
           </div>
         `;
@@ -1252,13 +1295,16 @@ function renderChecklist() {
     manualItems
       .map((item) => {
         const checkedClass = item.completed ? "checked" : "";
+        const priorityClass = `priority-${item.priority || "normal"}-border`;
+        const priorityBadgeClass = `priority-badge priority-${item.priority || "normal"}`;
         return `
-          <div class="checklist-item manual-item ${checkedClass}" data-check-id="${item.id}">
+          <div class="checklist-item manual-item ${checkedClass} ${priorityClass}" data-check-id="${item.id}">
             <label class="checklist-checkbox">
               <input type="checkbox" ${item.completed ? "checked" : ""} data-toggle-check="${item.id}" />
               <span class="checkmark"></span>
             </label>
             <span class="checklist-text">${escapeHtml(item.text)}</span>
+            <span class="${priorityBadgeClass}">${getPriorityLabel(item.priority)}</span>
             <button type="button" class="checklist-delete" title="删除检查项" data-delete-check="${item.id}">×</button>
           </div>
         `;
@@ -2244,7 +2290,7 @@ const BACKUP_VERSION = 2;
 const REQUIRED_REEL_FIELDS = ["id", "title", "createdAt", "segments", "checklist"];
 const REQUIRED_SEGMENT_FIELDS = ["id", "code", "duration", "shift", "damage", "note", "thumb"];
 const REQUIRED_TEMPLATE_FIELDS = ["id", "name", "duration", "shift", "damage", "notePrefix"];
-const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "completed"];
+const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "completed", "priority"];
 
 let backupParsedData = null;
 let backupConflictReport = null;
@@ -2935,8 +2981,8 @@ function buildReportSegmentsTable(reel) {
 }
 
 function buildReportChecklist(reel, stats) {
-  const autoItems = reel.checklist.filter(item => item.source === "auto");
-  const manualItems = reel.checklist.filter(item => item.source === "manual");
+  const autoItems = sortByPriority(reel.checklist.filter(item => item.source === "auto"));
+  const manualItems = sortByPriority(reel.checklist.filter(item => item.source === "manual"));
   const progressPercent = stats.checklistTotal > 0 ? (stats.checklistCompleted / stats.checklistTotal) * 100 : 0;
 
   const renderChecklistItems = (items) => {
@@ -2944,9 +2990,10 @@ function buildReportChecklist(reel, stats) {
       return `<div style="padding:10px;color:#697179;font-size:11px">暂无项目</div>`;
     }
     return items.map(item => `
-      <div class="report-checklist-item ${item.completed ? "completed" : ""}">
+      <div class="report-checklist-item report-priority-${item.priority || "normal"} ${item.completed ? "completed" : ""}">
         <div class="report-checklist-checkbox ${item.completed ? "checked" : ""}">${item.completed ? "✓" : ""}</div>
         <span class="report-checklist-text">${escapeHtml(item.text)}</span>
+        <span class="report-priority-badge report-priority-badge-${item.priority || "normal"}">${getPriorityLabel(item.priority)}</span>
         <span class="report-checklist-badge ${item.source}">${item.source === "auto" ? "自动" : "手动"}</span>
       </div>
     `).join("");

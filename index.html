@@ -238,9 +238,17 @@
           <div class="checklist-legend">
             <span class="legend-item"><span class="legend-dot auto-dot"></span> 自动待办：系统生成，不可删除</span>
             <span class="legend-item"><span class="legend-dot manual-dot"></span> 临时检查项：手动添加，可删除</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#b54d48"></span> 紧急</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#d49b35"></span> 重要</span>
+            <span class="legend-item"><span class="legend-dot" style="background:#347d89"></span> 普通</span>
           </div>
           <form id="checklistForm" class="checklist-form">
             <input id="checklistInput" type="text" placeholder="输入临时检查项，如：检查放映机镜头清洁度" required />
+            <select id="checklistPriority" class="checklist-priority-select">
+              <option value="normal">普通</option>
+              <option value="important">重要</option>
+              <option value="urgent">紧急</option>
+            </select>
             <button class="primary" type="submit">添加</button>
           </form>
           <div class="checklist-groups">

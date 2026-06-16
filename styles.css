@@ -533,13 +533,17 @@ label {
 
 .checklist-form {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 10px;
   margin-bottom: 16px;
 }
 
 .checklist-form input {
   flex: 1;
+}
+
+.checklist-priority-select {
+  min-width: 80px;
 }
 
 .checklist-groups {
@@ -646,6 +650,47 @@ label {
 .auto-badge {
   background: rgba(212, 155, 53, 0.14);
   color: var(--amber);
+}
+
+.priority-badge {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.priority-urgent {
+  background: rgba(181, 77, 72, 0.14);
+  color: var(--red);
+}
+
+.priority-important {
+  background: rgba(212, 155, 53, 0.14);
+  color: var(--amber);
+}
+
+.priority-normal {
+  background: rgba(52, 125, 137, 0.12);
+  color: var(--cyan);
+}
+
+.checklist-item.priority-urgent-border {
+  border-left: 3px solid var(--red);
+}
+
+.checklist-item.priority-important-border {
+  border-left: 3px solid var(--amber);
+}
+
+.checklist-item.priority-normal-border {
+  border-left: 3px solid var(--cyan);
+}
+
+.checklist-item.checked.priority-urgent-border,
+.checklist-item.checked.priority-important-border,
+.checklist-item.checked.priority-normal-border {
+  border-left-color: var(--green);
 }
 
 .checklist-delete {
@@ -3117,6 +3162,51 @@ label {
 .report-checklist-badge.manual {
   background: rgba(212, 155, 53, 0.15);
   color: #9a7d30;
+}
+
+.report-priority-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.report-priority-badge-urgent {
+  background: rgba(181, 77, 72, 0.12);
+  color: #b54d48;
+}
+
+.report-priority-badge-important {
+  background: rgba(212, 155, 53, 0.15);
+  color: #9a7d30;
+}
+
+.report-priority-badge-normal {
+  background: rgba(52, 125, 137, 0.12);
+  color: #347d89;
+}
+
+.report-checklist-item.report-priority-urgent {
+  border-left: 3px solid #b54d48;
+  padding-left: 10px;
+}
+
+.report-checklist-item.report-priority-important {
+  border-left: 3px solid #d49b35;
+  padding-left: 10px;
+}
+
+.report-checklist-item.report-priority-normal {
+  border-left: 3px solid #347d89;
+  padding-left: 10px;
+}
+
+.report-checklist-item.completed.report-priority-urgent,
+.report-checklist-item.completed.report-priority-important,
+.report-checklist-item.completed.report-priority-normal {
+  border-left-color: #4d7656;
 }
 
 .report-checklist-progress {
