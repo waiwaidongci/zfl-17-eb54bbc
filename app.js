@@ -1970,6 +1970,8 @@ els.segmentList.addEventListener("dragend", (event) => {
     if (reel) {
       const currentIndex = reel.segments.findIndex((item) => item.id === draggedId);
       if (currentIndex >= 0 && currentIndex !== dragStartIndex) {
+        const [item] = reel.segments.splice(currentIndex, 1);
+        reel.segments.splice(dragStartIndex, 0, item);
         history.execute(new MoveSegmentCommand(dragReelId, dragStartIndex, currentIndex));
       }
     }
