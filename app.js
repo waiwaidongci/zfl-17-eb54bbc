@@ -1,6 +1,565 @@
 const storageKey = "zfl17-film-strip-desk";
+const historyStorageKey = "zfl17-film-strip-desk-history";
 
 const fallbackThumbs = ["#d49b35", "#347d89", "#b54d48", "#4d7656", "#6d6378"];
+
+const MAX_HISTORY_SIZE = 50;
+
+class HistoryManager {
+  constructor() {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.isExecuting = false;
+    this.load();
+  }
+
+  execute(command) {
+    if (this.isExecuting) return;
+
+    this.isExecuting = true;
+    try {
+      command.execute();
+      this.undoStack.push(command);
+      this.redoStack = [];
+
+      if (this.undoStack.length > MAX_HISTORY_SIZE) {
+        this.undoStack.shift();
+      }
+
+      this.save();
+      this.updateUI();
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  undo() {
+    if (this.undoStack.length === 0 || this.isExecuting) return;
+
+    this.isExecuting = true;
+    try {
+      const command = this.undoStack.pop();
+      command.undo();
+      this.redoStack.push(command);
+      this.save();
+      this.updateUI();
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  redo() {
+    if (this.redoStack.length === 0 || this.isExecuting) return;
+
+    this.isExecuting = true;
+    try {
+      const command = this.redoStack.pop();
+      command.execute();
+      this.undoStack.push(command);
+      this.save();
+      this.updateUI();
+    } finally {
+      this.isExecuting = false;
+    }
+  }
+
+  canUndo() {
+    return this.undoStack.length > 0;
+  }
+
+  canRedo() {
+    return this.redoStack.length > 0;
+  }
+
+  clear() {
+    this.undoStack = [];
+    this.redoStack = [];
+    this.save();
+    this.updateUI();
+  }
+
+  save() {
+    try {
+      const serializable = {
+        undoStack: this.undoStack.map((cmd) => cmd.serialize()),
+        redoStack: this.redoStack.map((cmd) => cmd.serialize())
+      };
+      localStorage.setItem(historyStorageKey, JSON.stringify(serializable));
+    } catch (e) {
+      console.warn("Failed to save history:", e);
+    }
+  }
+
+  load() {
+    try {
+      const saved = localStorage.getItem(historyStorageKey);
+      if (!saved) return;
+
+      const parsed = JSON.parse(saved);
+      if (parsed.undoStack) {
+        this.undoStack = parsed.undoStack
+          .map((data) => this.deserialize(data))
+          .filter(Boolean);
+      }
+      if (parsed.redoStack) {
+        this.redoStack = parsed.redoStack
+          .map((data) => this.deserialize(data))
+          .filter(Boolean);
+      }
+    } catch (e) {
+      console.warn("Failed to load history:", e);
+      this.undoStack = [];
+      this.redoStack = [];
+    }
+  }
+
+  deserialize(data) {
+    if (!data || !data.type) return null;
+
+    switch (data.type) {
+      case "addSegment":
+        return new AddSegmentCommand(data.reelId, data.segment, data.index);
+      case "deleteSegment":
+        return new DeleteSegmentCommand(data.reelId, data.segment, data.index);
+      case "editSegment":
+        return new EditSegmentCommand(data.reelId, data.segmentId, data.oldData, data.newData);
+      case "moveSegment":
+        return new MoveSegmentCommand(data.reelId, data.fromIndex, data.toIndex);
+      case "batchImport":
+        return new BatchImportCommand(data.reelId, data.segments, data.startIndex);
+      case "addReel":
+        return new AddReelCommand(data.reel);
+      case "deleteReel":
+        return new DeleteReelCommand(data.reel, data.index, data.previousActiveId);
+      case "renameReel":
+        return new RenameReelCommand(data.reelId, data.oldTitle, data.newTitle);
+      case "duplicateReel":
+        return new DuplicateReelCommand(data.sourceReelId, data.newReel);
+      case "switchReel":
+        return new SwitchReelCommand(data.oldActiveId, data.newActiveId);
+      default:
+        return null;
+    }
+  }
+
+  updateUI() {
+    if (els.undoBtn) {
+      els.undoBtn.disabled = !this.canUndo();
+      els.undoBtn.title = this.canUndo()
+        ? `撤销：${this.undoStack[this.undoStack.length - 1]?.getLabel() || "上一步操作"} (Ctrl+Z)`
+        : "没有可撤销的操作";
+    }
+    if (els.redoBtn) {
+      els.redoBtn.disabled = !this.canRedo();
+      els.redoBtn.title = this.canRedo()
+        ? `重做：${this.redoStack[this.redoStack.length - 1]?.getLabel() || "上一步操作"} (Ctrl+Shift+Z)`
+        : "没有可重做的操作";
+    }
+    if (els.historyStatus) {
+      els.historyStatus.textContent = `历史记录：${this.undoStack.length} 步`;
+    }
+  }
+}
+
+class BaseCommand {
+  constructor(type) {
+    this.type = type;
+    this.timestamp = Date.now();
+  }
+
+  execute() {}
+  undo() {}
+  getLabel() {
+    return this.type;
+  }
+  serialize() {
+    return {
+      type: this.type,
+      timestamp: this.timestamp,
+      ...this._getData()
+    };
+  }
+  _getData() {
+    return {};
+  }
+}
+
+class AddSegmentCommand extends BaseCommand {
+  constructor(reelId, segment, index = null) {
+    super("addSegment");
+    this.reelId = reelId;
+    this.segment = structuredClone(segment);
+    this.index = index;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+
+    if (this.index !== null && this.index >= 0 && this.index <= reel.segments.length) {
+      reel.segments.splice(this.index, 0, this.segment);
+    } else {
+      reel.segments.push(this.segment);
+      this.index = reel.segments.length - 1;
+    }
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+
+    if (this.index !== null && this.index >= 0 && this.index < reel.segments.length) {
+      reel.segments.splice(this.index, 1);
+    } else {
+      reel.segments = reel.segments.filter((s) => s.id !== this.segment.id);
+    }
+    renderAll();
+  }
+
+  getLabel() {
+    return `新增片段 ${this.segment.code}`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      segment: this.segment,
+      index: this.index
+    };
+  }
+}
+
+class DeleteSegmentCommand extends BaseCommand {
+  constructor(reelId, segment, index) {
+    super("deleteSegment");
+    this.reelId = reelId;
+    this.segment = structuredClone(segment);
+    this.index = index;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    reel.segments = reel.segments.filter((s) => s.id !== this.segment.id);
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+
+    if (this.index !== null && this.index >= 0 && this.index <= reel.segments.length) {
+      reel.segments.splice(this.index, 0, this.segment);
+    } else {
+      reel.segments.push(this.segment);
+    }
+    renderAll();
+  }
+
+  getLabel() {
+    return `删除片段 ${this.segment.code}`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      segment: this.segment,
+      index: this.index
+    };
+  }
+}
+
+class EditSegmentCommand extends BaseCommand {
+  constructor(reelId, segmentId, oldData, newData) {
+    super("editSegment");
+    this.reelId = reelId;
+    this.segmentId = segmentId;
+    this.oldData = structuredClone(oldData);
+    this.newData = structuredClone(newData);
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    const segment = reel.segments.find((s) => s.id === this.segmentId);
+    if (!segment) return;
+
+    Object.assign(segment, this.newData);
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    const segment = reel.segments.find((s) => s.id === this.segmentId);
+    if (!segment) return;
+
+    Object.assign(segment, this.oldData);
+    renderAll();
+  }
+
+  getLabel() {
+    return `编辑片段 ${this.oldData.code || this.newData.code}`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      segmentId: this.segmentId,
+      oldData: this.oldData,
+      newData: this.newData
+    };
+  }
+}
+
+class MoveSegmentCommand extends BaseCommand {
+  constructor(reelId, fromIndex, toIndex) {
+    super("moveSegment");
+    this.reelId = reelId;
+    this.fromIndex = fromIndex;
+    this.toIndex = toIndex;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    const [item] = reel.segments.splice(this.fromIndex, 1);
+    reel.segments.splice(this.toIndex, 0, item);
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    const [item] = reel.segments.splice(this.toIndex, 1);
+    reel.segments.splice(this.fromIndex, 0, item);
+    renderAll();
+  }
+
+  getLabel() {
+    return `移动片段（位置 ${this.fromIndex + 1} → ${this.toIndex + 1}）`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      fromIndex: this.fromIndex,
+      toIndex: this.toIndex
+    };
+  }
+}
+
+class BatchImportCommand extends BaseCommand {
+  constructor(reelId, segments, startIndex = null) {
+    super("batchImport");
+    this.reelId = reelId;
+    this.segments = structuredClone(segments);
+    this.startIndex = startIndex;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+
+    if (this.startIndex === null) {
+      this.startIndex = reel.segments.length;
+    }
+
+    this.segments.forEach((seg, i) => {
+      reel.segments.splice(this.startIndex + i, 0, seg);
+    });
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+
+    if (this.startIndex !== null) {
+      reel.segments.splice(this.startIndex, this.segments.length);
+    } else {
+      const segmentIds = new Set(this.segments.map((s) => s.id));
+      reel.segments = reel.segments.filter((s) => !segmentIds.has(s.id));
+    }
+    renderAll();
+  }
+
+  getLabel() {
+    return `批量导入 ${this.segments.length} 个片段`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      segments: this.segments,
+      startIndex: this.startIndex
+    };
+  }
+}
+
+class AddReelCommand extends BaseCommand {
+  constructor(reel) {
+    super("addReel");
+    this.reel = structuredClone(reel);
+  }
+
+  execute() {
+    state.reels.push(this.reel);
+    state.activeReelId = this.reel.id;
+    renderAll();
+  }
+
+  undo() {
+    state.reels = state.reels.filter((r) => r.id !== this.reel.id);
+    if (state.activeReelId === this.reel.id && state.reels.length > 0) {
+      state.activeReelId = state.reels[0].id;
+    }
+    renderAll();
+  }
+
+  getLabel() {
+    return `新建胶片卷「${this.reel.title}」`;
+  }
+
+  _getData() {
+    return { reel: this.reel };
+  }
+}
+
+class DeleteReelCommand extends BaseCommand {
+  constructor(reel, index, previousActiveId) {
+    super("deleteReel");
+    this.reel = structuredClone(reel);
+    this.index = index;
+    this.previousActiveId = previousActiveId;
+  }
+
+  execute() {
+    state.reels = state.reels.filter((r) => r.id !== this.reel.id);
+    if (state.activeReelId === this.reel.id && state.reels.length > 0) {
+      state.activeReelId = state.reels[0].id;
+    }
+    renderAll();
+  }
+
+  undo() {
+    state.reels.splice(this.index, 0, this.reel);
+    state.activeReelId = this.previousActiveId;
+    renderAll();
+  }
+
+  getLabel() {
+    return `删除胶片卷「${this.reel.title}」`;
+  }
+
+  _getData() {
+    return {
+      reel: this.reel,
+      index: this.index,
+      previousActiveId: this.previousActiveId
+    };
+  }
+}
+
+class RenameReelCommand extends BaseCommand {
+  constructor(reelId, oldTitle, newTitle) {
+    super("renameReel");
+    this.reelId = reelId;
+    this.oldTitle = oldTitle;
+    this.newTitle = newTitle;
+  }
+
+  execute() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    reel.title = this.newTitle;
+    renderAll();
+  }
+
+  undo() {
+    const reel = state.reels.find((r) => r.id === this.reelId);
+    if (!reel) return;
+    reel.title = this.oldTitle;
+    renderAll();
+  }
+
+  getLabel() {
+    return `重命名胶片卷「${this.oldTitle}」→「${this.newTitle}」`;
+  }
+
+  _getData() {
+    return {
+      reelId: this.reelId,
+      oldTitle: this.oldTitle,
+      newTitle: this.newTitle
+    };
+  }
+}
+
+class DuplicateReelCommand extends BaseCommand {
+  constructor(sourceReelId, newReel) {
+    super("duplicateReel");
+    this.sourceReelId = sourceReelId;
+    this.newReel = structuredClone(newReel);
+  }
+
+  execute() {
+    state.reels.push(this.newReel);
+    state.activeReelId = this.newReel.id;
+    renderAll();
+  }
+
+  undo() {
+    state.reels = state.reels.filter((r) => r.id !== this.newReel.id);
+    state.activeReelId = this.sourceReelId;
+    renderAll();
+  }
+
+  getLabel() {
+    return `复制胶片卷「${this.newReel.title}」`;
+  }
+
+  _getData() {
+    return {
+      sourceReelId: this.sourceReelId,
+      newReel: this.newReel
+    };
+  }
+}
+
+class SwitchReelCommand extends BaseCommand {
+  constructor(oldActiveId, newActiveId) {
+    super("switchReel");
+    this.oldActiveId = oldActiveId;
+    this.newActiveId = newActiveId;
+  }
+
+  execute() {
+    state.activeReelId = this.newActiveId;
+    renderAll();
+  }
+
+  undo() {
+    state.activeReelId = this.oldActiveId;
+    renderAll();
+  }
+
+  getLabel() {
+    const oldReel = state.reels.find((r) => r.id === this.oldActiveId);
+    const newReel = state.reels.find((r) => r.id === this.newActiveId);
+    return `切换胶片卷「${oldReel?.title || ""}」→「${newReel?.title || ""}」`;
+  }
+
+  _getData() {
+    return {
+      oldActiveId: this.oldActiveId,
+      newActiveId: this.newActiveId
+    };
+  }
+}
+
+const history = new HistoryManager();
 
 // 风险评分规则和计算函数已移至 risk-rules.js 集中维护
 // 请编辑 risk-rules.js 文件调整评分标准
@@ -153,6 +712,8 @@ function getActiveReel() {
 
 let state = loadState();
 let draggedId = null;
+let dragStartIndex = -1;
+let dragReelId = null;
 let activeDrawerSegmentId = null;
 let drawerThumbDataUrl = "";
 
@@ -167,6 +728,10 @@ const els = {
   newReelNameInput: document.querySelector("#newReelNameInput"),
   reelList: document.querySelector("#reelList"),
   reelListTip: document.querySelector("#reelListTip"),
+
+  undoBtn: document.querySelector("#undoBtn"),
+  redoBtn: document.querySelector("#redoBtn"),
+  historyStatus: document.querySelector("#historyStatus"),
 
   reelTitle: document.querySelector("#reelTitle"),
   colorFilter: document.querySelector("#colorFilter"),
@@ -717,6 +1282,7 @@ function renderAll() {
   renderChecklist();
   renderReelList();
   saveState();
+  history.updateUI();
 }
 
 function formatDuration(seconds) {
@@ -744,7 +1310,7 @@ async function addSegment(event) {
   const reel = getActiveReel();
   if (!reel) return;
   const thumb = await readFileAsDataUrl(els.thumbInput.files[0]);
-  reel.segments.push({
+  const newSegment = {
     id: crypto.randomUUID(),
     code: els.codeInput.value.trim(),
     duration: Number(els.durationInput.value),
@@ -752,21 +1318,19 @@ async function addSegment(event) {
     damage: els.damageInput.value,
     note: els.noteInput.value.trim(),
     thumb
-  });
+  };
+  history.execute(new AddSegmentCommand(reel.id, newSegment, reel.segments.length));
   els.segmentForm.reset();
   els.durationInput.value = 12;
-  renderAll();
 }
 
 function moveSegment(id, direction) {
   const reel = getActiveReel();
   if (!reel) return;
-  const index = reel.segments.findIndex((item) => item.id === id);
-  const target = index + direction;
-  if (index < 0 || target < 0 || target >= reel.segments.length) return;
-  const [item] = reel.segments.splice(index, 1);
-  reel.segments.splice(target, 0, item);
-  renderAll();
+  const fromIndex = reel.segments.findIndex((item) => item.id === id);
+  const toIndex = fromIndex + direction;
+  if (fromIndex < 0 || toIndex < 0 || toIndex >= reel.segments.length) return;
+  history.execute(new MoveSegmentCommand(reel.id, fromIndex, toIndex));
 }
 
 function exportList() {
@@ -871,12 +1435,14 @@ async function saveDrawerEdits(event) {
   const segmentIndex = reel.segments.findIndex((s) => s.id === activeDrawerSegmentId);
   if (segmentIndex < 0) return;
 
+  const oldData = structuredClone(reel.segments[segmentIndex]);
+
   const file = els.drawerThumbInput.files[0];
   if (file) {
     drawerThumbDataUrl = await readFileAsDataUrl(file);
   }
 
-  reel.segments[segmentIndex] = {
+  const newData = {
     ...reel.segments[segmentIndex],
     code: els.drawerCode.value.trim(),
     duration: Number(els.drawerDuration.value),
@@ -886,17 +1452,20 @@ async function saveDrawerEdits(event) {
     thumb: drawerThumbDataUrl
   };
 
-  renderAll();
+  history.execute(new EditSegmentCommand(reel.id, activeDrawerSegmentId, oldData, newData));
   closeDrawer();
 }
 
 function deleteFromDrawer() {
   const reel = getActiveReel();
   if (!reel || !activeDrawerSegmentId) return;
-  if (!confirm("确定要删除此片段吗？此操作不可撤销。")) return;
+  if (!confirm("确定要删除此片段吗？可以使用撤销恢复。")) return;
 
-  reel.segments = reel.segments.filter((s) => s.id !== activeDrawerSegmentId);
-  renderAll();
+  const segmentIndex = reel.segments.findIndex((s) => s.id === activeDrawerSegmentId);
+  if (segmentIndex < 0) return;
+
+  const segment = reel.segments[segmentIndex];
+  history.execute(new DeleteSegmentCommand(reel.id, segment, segmentIndex));
   closeDrawer();
 }
 
@@ -927,30 +1496,29 @@ function createReel() {
     segments: [],
     checklist: []
   };
-  state.reels.push(newReel);
-  state.activeReelId = newReel.id;
+  history.execute(new AddReelCommand(newReel));
   els.newReelNameInput.value = "";
-  renderAll();
 }
 
 function switchReel(reelId) {
   if (!state.reels.find((r) => r.id === reelId)) return;
-  state.activeReelId = reelId;
-  renderAll();
+  if (state.activeReelId === reelId) return;
+  history.execute(new SwitchReelCommand(state.activeReelId, reelId));
 }
 
 function renameReel(reelId) {
   const reel = state.reels.find((r) => r.id === reelId);
   if (!reel) return;
-  const newName = prompt("请输入新的胶片卷名称：", reel.title);
+  const oldTitle = reel.title;
+  const newName = prompt("请输入新的胶片卷名称：", oldTitle);
   if (newName === null) return;
   const trimmed = newName.trim();
   if (!trimmed) {
     alert("名称不能为空。");
     return;
   }
-  reel.title = trimmed;
-  renderAll();
+  if (trimmed === oldTitle) return;
+  history.execute(new RenameReelCommand(reelId, oldTitle, trimmed));
 }
 
 function duplicateReel(reelId) {
@@ -962,9 +1530,7 @@ function duplicateReel(reelId) {
   copy.createdAt = Date.now();
   copy.segments = copy.segments.map((seg) => ({ ...seg, id: crypto.randomUUID() }));
   copy.checklist = copy.checklist.map((item) => ({ ...item, id: crypto.randomUUID() }));
-  state.reels.push(copy);
-  state.activeReelId = copy.id;
-  renderAll();
+  history.execute(new DuplicateReelCommand(reelId, copy));
 }
 
 function deleteReel(reelId) {
@@ -974,13 +1540,11 @@ function deleteReel(reelId) {
     alert("至少需要保留一个胶片卷。");
     return;
   }
-  if (!confirm(`确定要删除胶片卷「${reel.title}」吗？此操作不可撤销。`)) return;
+  if (!confirm(`确定要删除胶片卷「${reel.title}」吗？可使用撤销恢复。`)) return;
 
-  state.reels = state.reels.filter((r) => r.id !== reelId);
-  if (state.activeReelId === reelId) {
-    state.activeReelId = state.reels[0].id;
-  }
-  renderAll();
+  const reelIndex = state.reels.findIndex((r) => r.id === reelId);
+  const previousActiveId = state.activeReelId;
+  history.execute(new DeleteReelCommand(reel, reelIndex, previousActiveId));
 }
 
 els.reelSwitcherBtn.addEventListener("click", openReelModal);
@@ -1032,6 +1596,9 @@ els.reelTitle.addEventListener("input", () => {
   }
 });
 
+els.undoBtn.addEventListener("click", () => history.undo());
+els.redoBtn.addEventListener("click", () => history.redo());
+
 els.colorFilter.addEventListener("change", () => { renderList(); renderTimeline(); });
 els.searchInput.addEventListener("input", () => { renderList(); renderTimeline(); });
 els.segmentForm.addEventListener("submit", addSegment);
@@ -1054,10 +1621,16 @@ els.segmentList.addEventListener("click", (event) => {
   if (remove) {
     event.stopPropagation();
     const reel = getActiveReel();
-    if (reel) {
-      reel.segments = reel.segments.filter((item) => item.id !== remove.dataset.delete);
-      renderAll();
-    }
+    if (!reel) return;
+
+    const segmentId = remove.dataset.delete;
+    const segmentIndex = reel.segments.findIndex((s) => s.id === segmentId);
+    if (segmentIndex < 0) return;
+
+    if (!confirm("确定要删除此片段吗？可以使用撤销恢复。")) return;
+
+    const segment = reel.segments[segmentIndex];
+    history.execute(new DeleteSegmentCommand(reel.id, segment, segmentIndex));
   }
   if (view && !up && !down && !remove) {
     openDrawer(view.dataset.view);
@@ -1067,14 +1640,32 @@ els.segmentList.addEventListener("click", (event) => {
 els.segmentList.addEventListener("dragstart", (event) => {
   const card = event.target.closest("[data-id]");
   if (!card) return;
+  const reel = getActiveReel();
+  if (!reel) return;
+
   draggedId = card.dataset.id;
+  dragReelId = reel.id;
+  dragStartIndex = reel.segments.findIndex((item) => item.id === draggedId);
   card.classList.add("dragging");
   event.dataTransfer.effectAllowed = "move";
 });
 
 els.segmentList.addEventListener("dragend", (event) => {
   event.target.closest("[data-id]")?.classList.remove("dragging");
+
+  if (draggedId && dragReelId && dragStartIndex >= 0) {
+    const reel = state.reels.find((r) => r.id === dragReelId);
+    if (reel) {
+      const currentIndex = reel.segments.findIndex((item) => item.id === draggedId);
+      if (currentIndex >= 0 && currentIndex !== dragStartIndex) {
+        history.execute(new MoveSegmentCommand(dragReelId, dragStartIndex, currentIndex));
+      }
+    }
+  }
+
   draggedId = null;
+  dragStartIndex = -1;
+  dragReelId = null;
 });
 
 els.segmentList.addEventListener("dragover", (event) => {
@@ -1390,22 +1981,20 @@ function handleImportConfirm() {
   const okRows = importParsedRows.filter((r) => r.status === "ok");
   if (okRows.length === 0) return;
 
-  if (!confirm(`确认将 ${okRows.length} 条有效片段导入当前放映清单「${reel.title}」？重复和错误行将跳过。`)) return;
+  if (!confirm(`确认将 ${okRows.length} 条有效片段导入当前放映清单「${reel.title}」？重复和错误行将跳过。可使用撤销恢复。`)) return;
 
-  for (const row of okRows) {
-    reel.segments.push({
-      id: crypto.randomUUID(),
-      code: row.code,
-      duration: row._durationNum,
-      shift: row.shift,
-      damage: row.damage,
-      note: row.note,
-      thumb: ""
-    });
-  }
+  const newSegments = okRows.map((row) => ({
+    id: crypto.randomUUID(),
+    code: row.code,
+    duration: row._durationNum,
+    shift: row.shift,
+    damage: row.damage,
+    note: row.note,
+    thumb: ""
+  }));
 
+  history.execute(new BatchImportCommand(reel.id, newSegments, reel.segments.length));
   closeImportModal();
-  renderAll();
 }
 
 els.importBtn.addEventListener("click", openImportModal);
@@ -1427,6 +2016,27 @@ els.importCsvFile.addEventListener("change", () => {
 });
 
 document.addEventListener("keydown", (event) => {
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+  const ctrlKey = isMac ? event.metaKey : event.ctrlKey;
+
+  if (ctrlKey && event.key === "z" && !event.shiftKey) {
+    event.preventDefault();
+    history.undo();
+    return;
+  }
+
+  if (ctrlKey && event.shiftKey && event.key === "z") {
+    event.preventDefault();
+    history.redo();
+    return;
+  }
+
+  if (ctrlKey && event.key === "y") {
+    event.preventDefault();
+    history.redo();
+    return;
+  }
+
   if (event.key === "Escape") {
     if (els.backupModal.classList.contains("open")) {
       closeBackupModal();
@@ -1944,6 +2554,7 @@ function confirmBackupRestore() {
     return;
   }
 
+  history.clear();
   alert(mode === "overwrite" ? "数据恢复成功！" : `合并成功！已追加 ${result.mergedCount} 项数据。`);
   closeBackupModal();
 }

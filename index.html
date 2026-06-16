@@ -64,6 +64,9 @@
           搜索
           <input id="searchInput" type="search" placeholder="片段编号或备注" />
         </label>
+        <button id="undoBtn" class="history-btn" title="撤销 (Ctrl+Z)">↶ 撤销</button>
+        <button id="redoBtn" class="history-btn" title="重做 (Ctrl+Shift+Z)">↷ 重做</button>
+        <span id="historyStatus" class="history-status">历史记录：0 步</span>
         <button id="exportBtn">导出清单</button>
         <button id="importBtn">批量导入</button>
         <button id="backupBtn" class="backup-btn" title="备份与恢复">💾 备份恢复</button>

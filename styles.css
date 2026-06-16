@@ -1749,6 +1749,35 @@ label {
   }
 }
 
+.history-btn {
+  background: linear-gradient(135deg, rgba(105, 113, 121, 0.08), rgba(105, 113, 121, 0.02));
+  border-color: var(--muted);
+  color: var(--muted);
+  font-weight: 800;
+  transition: all 0.2s;
+}
+
+.history-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(105, 113, 121, 0.16), rgba(105, 113, 121, 0.06));
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.history-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(105, 113, 121, 0.04);
+}
+
+.history-status {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
 .backup-btn {
   background: linear-gradient(135deg, rgba(52, 125, 137, 0.1), rgba(52, 125, 137, 0.04));
   border-color: var(--cyan);
