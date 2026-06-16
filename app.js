@@ -1340,11 +1340,7 @@ function moveSegment(id, direction) {
   if (targetVisibleIndex < 0 || targetVisibleIndex >= visibleSegments.length) return;
 
   const targetSegment = visibleSegments[targetVisibleIndex];
-  let toIndex = reel.segments.findIndex((item) => item.id === targetSegment.id);
-
-  if (direction > 0) {
-    toIndex += 1;
-  }
+  const toIndex = reel.segments.findIndex((item) => item.id === targetSegment.id);
 
   if (toIndex < 0 || toIndex > reel.segments.length || toIndex === fromIndex) return;
 
