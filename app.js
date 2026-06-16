@@ -1327,9 +1327,27 @@ async function addSegment(event) {
 function moveSegment(id, direction) {
   const reel = getActiveReel();
   if (!reel) return;
+
   const fromIndex = reel.segments.findIndex((item) => item.id === id);
-  const toIndex = fromIndex + direction;
-  if (fromIndex < 0 || toIndex < 0 || toIndex >= reel.segments.length) return;
+  if (fromIndex < 0) return;
+
+  const visibleSegments = getFilteredSegments();
+  const visibleIndex = visibleSegments.findIndex((item) => item.id === id);
+
+  if (visibleIndex < 0) return;
+
+  const targetVisibleIndex = visibleIndex + direction;
+  if (targetVisibleIndex < 0 || targetVisibleIndex >= visibleSegments.length) return;
+
+  const targetSegment = visibleSegments[targetVisibleIndex];
+  let toIndex = reel.segments.findIndex((item) => item.id === targetSegment.id);
+
+  if (direction > 0) {
+    toIndex += 1;
+  }
+
+  if (toIndex < 0 || toIndex > reel.segments.length || toIndex === fromIndex) return;
+
   history.execute(new MoveSegmentCommand(reel.id, fromIndex, toIndex));
 }
 
