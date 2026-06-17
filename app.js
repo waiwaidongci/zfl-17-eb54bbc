@@ -933,7 +933,21 @@ function collectElements() {
     saveTplPreviewShift: document.querySelector("#saveTplPreviewShift"),
     saveTplPreviewDamage: document.querySelector("#saveTplPreviewDamage"),
     saveTplPreviewNote: document.querySelector("#saveTplPreviewNote"),
-    saveTplCancelBtn: document.querySelector("#saveTplCancelBtn")
+    saveTplCancelBtn: document.querySelector("#saveTplCancelBtn"),
+
+    riskRulesBtn: document.querySelector("#riskRulesBtn"),
+    riskRulesModalBackdrop: document.querySelector("#riskRulesModalBackdrop"),
+    riskRulesModal: document.querySelector("#riskRulesModal"),
+    riskRulesModalClose: document.querySelector("#riskRulesModalClose"),
+    riskRulesSaveBtn: document.querySelector("#riskRulesSaveBtn"),
+    riskRulesCancelBtn: document.querySelector("#riskRulesCancelBtn"),
+    riskRulesResetBtn: document.querySelector("#riskRulesResetBtn"),
+    riskRulesErrors: document.querySelector("#riskRulesErrors"),
+    shiftRulesGrid: document.querySelector("#shiftRulesGrid"),
+    damageRulesGrid: document.querySelector("#damageRulesGrid"),
+    durationRulesList: document.querySelector("#durationRulesList"),
+    keywordsRulesList: document.querySelector("#keywordsRulesList"),
+    levelsRulesList: document.querySelector("#levelsRulesList")
   };
 }
 
@@ -2615,7 +2629,8 @@ function exportBackup() {
     exportedAt: Date.now(),
     activeReelId: state.activeReelId,
     reels: structuredClone(state.reels),
-    templates: structuredClone(state.templates)
+    templates: structuredClone(state.templates),
+    riskRules: getSerializedRulesForBackup()
   };
 
   const jsonStr = JSON.stringify(backupData, null, 2);
@@ -3056,7 +3071,7 @@ function applyBackupMerge(backupData) {
     saveState();
     renderAll();
 
-    return { success: true, mergedCount: backupData.reels.length + backupData.templates.length };
+    return { success: true, mergedCount: backupData.reels.length + backupData.templates.length, hasRiskRules: !!backupData.riskRules };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -3095,8 +3110,28 @@ function confirmBackupRestore() {
     return;
   }
 
+  let riskRulesRestored = false;
+  if (mode === "overwrite" && backupParsedData.riskRules) {
+    const restoreResult = restoreRulesFromBackup(backupParsedData.riskRules);
+    riskRulesRestored = restoreResult.success;
+  } else if (mode === "merge" && backupParsedData.riskRules) {
+    if (confirm("备份文件中包含风险评分规则，是否同时导入这些规则？\n\n选择「确定」将用备份中的规则覆盖当前规则；选择「取消」将保留当前规则。")) {
+      const restoreResult = restoreRulesFromBackup(backupParsedData.riskRules);
+      riskRulesRestored = restoreResult.success;
+    }
+  }
+
+  if (riskRulesRestored) {
+    syncAutoChecklist();
+    renderAll();
+  }
+
   history.clear();
-  alert(mode === "overwrite" ? "数据恢复成功！" : `合并成功！已追加 ${result.mergedCount} 项数据。`);
+  let successMsg = mode === "overwrite" ? "数据恢复成功！" : `合并成功！已追加 ${result.mergedCount} 项数据。`;
+  if (riskRulesRestored) {
+    successMsg += "\n风险评分规则已同步恢复。";
+  }
+  alert(successMsg);
   closeBackupModal();
 }
 
@@ -3107,6 +3142,205 @@ els.backupCancelBtn.addEventListener("click", closeBackupModal);
 els.backupExportBtn.addEventListener("click", exportBackup);
 els.backupFileInput.addEventListener("change", handleBackupFileSelect);
 els.backupConfirmBtn.addEventListener("click", confirmBackupRestore);
+
+function openRiskRulesModal() {
+  els.riskRulesModal.classList.add("open");
+  els.riskRulesModalBackdrop.classList.add("open");
+  els.riskRulesModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  renderRiskRulesForm();
+}
+
+function closeRiskRulesModal() {
+  els.riskRulesModal.classList.remove("open");
+  els.riskRulesModalBackdrop.classList.remove("open");
+  els.riskRulesModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  els.riskRulesErrors.style.display = "none";
+}
+
+function renderRiskRulesForm() {
+  const rules = getCurrentRiskRules();
+
+  els.shiftRulesGrid.innerHTML = Object.entries(rules.shift)
+    .map(([key, value]) => `
+      <div class="rules-row">
+        <span class="rules-row-label">${escapeHtml(key)}</span>
+        <span class="rules-row-input">
+          <input type="number" min="0" step="1" data-rule-type="shift" data-rule-key="${escapeHtml(key)}" value="${value}" />
+        </span>
+      </div>
+    `).join("");
+
+  els.damageRulesGrid.innerHTML = Object.entries(rules.damage)
+    .map(([key, value]) => `
+      <div class="rules-row">
+        <span class="rules-row-label">${escapeHtml(key)}</span>
+        <span class="rules-row-input">
+          <input type="number" min="0" step="1" data-rule-type="damage" data-rule-key="${escapeHtml(key)}" value="${value}" />
+        </span>
+      </div>
+    `).join("");
+
+  els.durationRulesList.innerHTML = rules.duration.thresholds
+    .map((t, i) => `
+      <div class="duration-rule-item">
+        <label class="duration-rule-label">
+          <span>最大秒数</span>
+          <input type="number" min="1" step="1" data-rule-type="duration" data-rule-index="${i}" data-rule-field="max" value="${t.max}" />
+        </label>
+        <label class="duration-rule-label">
+          <span>分值</span>
+          <input type="number" min="0" step="1" data-rule-type="duration" data-rule-index="${i}" data-rule-field="score" value="${t.score}" />
+        </label>
+        <label class="duration-rule-label">
+          <span>原因描述</span>
+          <input type="text" data-rule-type="duration" data-rule-index="${i}" data-rule-field="reason" value="${escapeHtml(t.reason)}" />
+        </label>
+      </div>
+    `).join("");
+
+  els.keywordsRulesList.innerHTML = rules.noteKeywords
+    .map((kw, i) => `
+      <div class="keyword-rule-item">
+        <label class="keyword-rule-label">
+          <span>正则表达式</span>
+          <input type="text" data-rule-type="keyword" data-rule-index="${i}" data-rule-field="pattern" value="${escapeHtml(kw.pattern)}" />
+        </label>
+        <label class="keyword-rule-label">
+          <span>分值</span>
+          <input type="number" min="0" step="1" data-rule-type="keyword" data-rule-index="${i}" data-rule-field="score" value="${kw.score}" />
+        </label>
+        <label class="keyword-rule-label">
+          <span>原因描述</span>
+          <input type="text" data-rule-type="keyword" data-rule-index="${i}" data-rule-field="reason" value="${escapeHtml(kw.reason)}" />
+        </label>
+      </div>
+    `).join("");
+
+  els.levelsRulesList.innerHTML = rules.levels
+    .map((l, i) => `
+      <div class="level-rule-item">
+        <label class="level-rule-label">
+          <span>最大分值</span>
+          <input type="text" data-rule-type="level" data-rule-index="${i}" data-rule-field="max" value="${escapeHtml(String(l.max))}" />
+        </label>
+        <label class="level-rule-label">
+          <span>等级标签</span>
+          <input type="text" data-rule-type="level" data-rule-index="${i}" data-rule-field="label" value="${escapeHtml(l.label)}" />
+        </label>
+        <label class="level-rule-label">
+          <span>样式类</span>
+          <select data-rule-type="level" data-rule-index="${i}" data-rule-field="css">
+            <option value="risk-safe" ${l.css === "risk-safe" ? "selected" : ""}>安全（绿色）</option>
+            <option value="risk-low" ${l.css === "risk-low" ? "selected" : ""}>低风险（蓝色）</option>
+            <option value="risk-medium" ${l.css === "risk-medium" ? "selected" : ""}>中风险（黄色）</option>
+            <option value="risk-high" ${l.css === "risk-high" ? "selected" : ""}>高风险（红色）</option>
+          </select>
+        </label>
+      </div>
+    `).join("");
+}
+
+function collectRiskRulesFromForm() {
+  const rules = {
+    shift: {},
+    damage: {},
+    duration: { thresholds: [] },
+    noteKeywords: [],
+    levels: []
+  };
+
+  els.shiftRulesGrid.querySelectorAll("input").forEach(input => {
+    const key = input.dataset.ruleKey;
+    rules.shift[key] = Number(input.value) || 0;
+  });
+
+  els.damageRulesGrid.querySelectorAll("input").forEach(input => {
+    const key = input.dataset.ruleKey;
+    rules.damage[key] = Number(input.value) || 0;
+  });
+
+  const durationItems = els.durationRulesList.querySelectorAll(".duration-rule-item");
+  durationItems.forEach((item, i) => {
+    const maxInput = item.querySelector('[data-rule-field="max"]');
+    const scoreInput = item.querySelector('[data-rule-field="score"]');
+    const reasonInput = item.querySelector('[data-rule-field="reason"]');
+    rules.duration.thresholds.push({
+      max: Number(maxInput.value) || 0,
+      score: Number(scoreInput.value) || 0,
+      reason: reasonInput.value || ""
+    });
+  });
+
+  const keywordItems = els.keywordsRulesList.querySelectorAll(".keyword-rule-item");
+  keywordItems.forEach((item, i) => {
+    const patternInput = item.querySelector('[data-rule-field="pattern"]');
+    const scoreInput = item.querySelector('[data-rule-field="score"]');
+    const reasonInput = item.querySelector('[data-rule-field="reason"]');
+    rules.noteKeywords.push({
+      pattern: patternInput.value || "",
+      score: Number(scoreInput.value) || 0,
+      reason: reasonInput.value || ""
+    });
+  });
+
+  const levelItems = els.levelsRulesList.querySelectorAll(".level-rule-item");
+  levelItems.forEach((item, i) => {
+    const maxInput = item.querySelector('[data-rule-field="max"]');
+    const labelInput = item.querySelector('[data-rule-field="label"]');
+    const cssSelect = item.querySelector('[data-rule-field="css"]');
+    const maxVal = maxInput.value;
+    rules.levels.push({
+      max: maxVal === "Infinity" ? "Infinity" : (Number(maxVal) || 0),
+      label: labelInput.value || "",
+      css: cssSelect.value
+    });
+  });
+
+  return rules;
+}
+
+function saveRiskRules() {
+  const rules = collectRiskRulesFromForm();
+  const result = updateRiskRules(rules);
+
+  if (!result.success) {
+    els.riskRulesErrors.innerHTML = `
+      <strong>规则验证失败：</strong>
+      <ul>${result.errors.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+    `;
+    els.riskRulesErrors.style.display = "block";
+    return;
+  }
+
+  els.riskRulesErrors.style.display = "none";
+  syncAutoChecklist();
+  saveState();
+  renderAll();
+  closeRiskRulesModal();
+  alert("风险规则已保存！");
+}
+
+function resetRiskRules() {
+  if (!confirm("确定要恢复为默认风险规则吗？当前的自定义设置将丢失。")) {
+    return;
+  }
+  resetRiskRulesToDefault();
+  renderRiskRulesForm();
+  els.riskRulesErrors.style.display = "none";
+  syncAutoChecklist();
+  saveState();
+  renderAll();
+  alert("已恢复为默认风险规则！");
+}
+
+els.riskRulesBtn.addEventListener("click", openRiskRulesModal);
+els.riskRulesModalClose.addEventListener("click", closeRiskRulesModal);
+els.riskRulesModalBackdrop.addEventListener("click", closeRiskRulesModal);
+els.riskRulesCancelBtn.addEventListener("click", closeRiskRulesModal);
+els.riskRulesSaveBtn.addEventListener("click", saveRiskRules);
+els.riskRulesResetBtn.addEventListener("click", resetRiskRules);
 
 function getShiftTagClass(shift) {
   const map = {
