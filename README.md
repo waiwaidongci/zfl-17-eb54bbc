@@ -97,3 +97,128 @@ A-008,16,褪色,轻微划痕,旧片，整体褪色严重
 ### 本地存储
 
 所有模板数据与片段清单一同保存在浏览器本地（localStorage），刷新或关闭页面后不会丢失。
+
+## 回归验证工程化流程
+
+本项目提供了完整的回归验证流程，支持**命令行基础检查**和**浏览器端到端回归测试**两种方式，无需任何构建工具或 npm 依赖。
+
+### 验证方式总览
+
+| 验证方式 | 工具 | 覆盖范围 | 运行环境 |
+|---------|------|---------|---------|
+| 基础自动化检查 | `verify-basics.py` | 文件完整性、HTML结构、JS核心API、测试用例完整性、CSV格式 | 命令行（Python） |
+| 端到端回归测试 | `e2e.test.html` | 7条关键用户路径 + 综合场景 | 浏览器 |
+| 风险规则单元测试 | `risk-rules.test.html` | 风险评分规则引擎 | 浏览器 |
+
+### 快速开始（一键运行）
+
+```bash
+# 方式一：Python 版（推荐，跨平台）
+python3 scripts/run-tests.py
+
+# 方式二：Shell 版（macOS/Linux）
+bash scripts/run-tests.sh
+```
+
+运行后会自动：
+1. 执行基础自动化检查
+2. 启动静态文件服务器（默认端口 8000）
+3. 显示测试页面访问地址
+
+**常用参数：**
+```bash
+# 只运行基础检查，不启动服务器
+python3 scripts/run-tests.py --no-server
+
+# 指定端口
+python3 scripts/run-tests.py --port 3000
+
+# 自动打开 E2E 测试页面
+python3 scripts/run-tests.py --open
+```
+
+### 方式一：命令行基础检查
+
+无需浏览器，快速验证项目结构和核心 API 是否完整。
+
+```bash
+python3 scripts/verify-basics.py
+```
+
+**检查项（共 5 大类）：**
+1. **文件完整性** — 检查 index.html、app.js、risk-rules.js、batch-import.js、styles.css 等必需文件
+2. **HTML 结构** — 验证 script 标签引用、CSS 引用、关键 DOM 元素 ID
+3. **JS 核心 API** — 静态分析核心类和函数是否存在（HistoryManager、SnapshotManager、风险规则 API 等）
+4. **测试用例完整性** — 检查风险规则单元测试的测试框架、套件数量、localStorage 隔离机制
+5. **CSV 示例格式** — 验证示例 CSV 文件的表头格式和数据有效性
+
+### 方式二：浏览器端到端回归测试
+
+在真实浏览器环境中运行完整回归用例，覆盖 7 条关键用户路径。
+
+**启动静态服务器：**
+```bash
+# 方式一：Python 版
+python3 scripts/start-server.py
+
+# 方式二：Shell 版
+bash scripts/start-server.sh
+
+# 方式三：直接使用 Python 内置模块
+python3 -m http.server 8000
+```
+
+**访问测试页面：**
+- **E2E 回归测试**：http://localhost:8000/e2e.test.html （推荐，覆盖全部关键路径）
+- **风险规则单元测试**：http://localhost:8000/risk-rules.test.html
+
+打开页面后测试会自动运行，左侧显示测试报告，右侧显示应用预览。
+
+### 关键用户路径（E2E 测试覆盖）
+
+E2E 测试覆盖以下 7 条核心用户路径：
+
+| # | 路径 | 测试内容 |
+|---|------|---------|
+| 1 | **新增片段** | 表单填写、添加到列表、数据持久化、撤销/重做 |
+| 2 | **批量导入 CSV** | CSV 解析、有效性校验、重复检测、导入确认、导入后数据验证 |
+| 3 | **调整顺序** | 上移/下移、边界情况、撤销/重做、数据一致性 |
+| 4 | **修改风险规则** | 更新规则参数、规则验证、风险重算、默认值重置、备份恢复 |
+| 5 | **创建快照** | 创建快照、快照列表管理、快照恢复、快照删除 |
+| 6 | **备份恢复** | 数据备份导出、备份解析、数据恢复、完整性校验 |
+| 7 | **生成试映报告** | 报告生成、风险片段筛选、统计数据准确性 |
+
+此外还包含**综合场景测试**，模拟多条路径组合操作。
+
+### 测试数据隔离
+
+- E2E 测试运行前会自动备份所有 `zfl17` 前缀的 localStorage 数据
+- 测试结束或页面关闭时自动恢复用户原始数据
+- 风险规则单元测试使用 `__test_zfl17_` 前缀独立存储，互不干扰
+
+### 文件结构
+
+```
+├── index.html                 # 主应用页面
+├── e2e.test.html              # 端到端回归测试页面
+├── risk-rules.test.html       # 风险规则单元测试页面
+├── app.js                     # 核心应用逻辑
+├── risk-rules.js              # 风险规则模块
+├── batch-import.js            # 批量导入模块
+├── styles.css                 # 样式文件
+├── segments-example.csv       # CSV 导入示例
+└── scripts/
+    ├── start-server.sh        # 静态服务器启动脚本（Shell）
+    ├── start-server.py        # 静态服务器启动脚本（Python）
+    ├── verify-basics.py       # 基础自动化检查脚本
+    ├── run-tests.sh           # 统一测试入口（Shell）
+    └── run-tests.py           # 统一测试入口（Python）
+```
+
+## 直接使用（无需服务器）
+
+本应用是纯前端零依赖项目，也可以**直接双击打开 `index.html`** 使用，无需启动任何服务器。
+
+但请注意：
+- 部分浏览器的 localStorage 在 `file://` 协议下可能有限制
+- 运行测试页面**必须**通过 HTTP 服务器访问（iframe 加载限制）

@@ -5126,3 +5126,18 @@ els.snapshotList.addEventListener("click", (event) => {
 });
 
 renderAll();
+
+window.state = state;
+window.appHistory = history;
+window.snapshotManager = snapshotManager;
+window.getActiveReel = getActiveReel;
+window.renderAll = renderAll;
+window.saveState = saveState;
+
+window.HistoryManager = HistoryManager;
+window.SnapshotManager = SnapshotManager;
+window.AddSegmentCommand = AddSegmentCommand;
+window.DeleteSegmentCommand = DeleteSegmentCommand;
+window.EditSegmentCommand = EditSegmentCommand;
+window.MoveSegmentCommand = MoveSegmentCommand;
+window.BatchImportCommand = BatchImportCommand;
