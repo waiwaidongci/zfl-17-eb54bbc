@@ -1000,7 +1000,19 @@ function collectElements() {
     damageRulesGrid: document.querySelector("#damageRulesGrid"),
     durationRulesList: document.querySelector("#durationRulesList"),
     keywordsRulesList: document.querySelector("#keywordsRulesList"),
-    levelsRulesList: document.querySelector("#levelsRulesList")
+    levelsRulesList: document.querySelector("#levelsRulesList"),
+
+    reportConfigModalBackdrop: document.querySelector("#reportConfigModalBackdrop"),
+    reportConfigModal: document.querySelector("#reportConfigModal"),
+    reportConfigModalClose: document.querySelector("#reportConfigModalClose"),
+    reportConfigCancelBtn: document.querySelector("#reportConfigCancelBtn"),
+    reportConfigConfirmBtn: document.querySelector("#reportConfigConfirmBtn"),
+    cfgCover: document.querySelector("#cfgCover"),
+    cfgSummary: document.querySelector("#cfgSummary"),
+    cfgSegments: document.querySelector("#cfgSegments"),
+    cfgAbnormal: document.querySelector("#cfgAbnormal"),
+    cfgChecklist: document.querySelector("#cfgChecklist"),
+    cfgThumbs: document.querySelector("#cfgThumbs")
   };
 }
 
@@ -3758,7 +3770,98 @@ function getShiftTagClass(shift) {
   return map[shift] || "shift-normal";
 }
 
-function getThumbHtml(segment, index, size = "normal") {
+const REPORT_PRESETS = {
+  screening: {
+    cover: true,
+    summary: true,
+    segments: true,
+    abnormal: false,
+    checklist: false,
+    thumbs: false
+  },
+  repair: {
+    cover: true,
+    summary: true,
+    segments: true,
+    abnormal: true,
+    checklist: true,
+    thumbs: true
+  }
+};
+
+function getDefaultReportConfig() {
+  return { ...REPORT_PRESETS.repair };
+}
+
+let currentReportConfig = getDefaultReportConfig();
+
+function openReportConfigModal() {
+  const reel = getActiveReel();
+  if (!reel) {
+    alert("没有可用的胶片卷数据。");
+    return;
+  }
+
+  applyReportPreset("repair");
+
+  els.reportConfigModalBackdrop.classList.add("open");
+  els.reportConfigModal.classList.add("open");
+  els.reportConfigModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function closeReportConfigModal() {
+  els.reportConfigModalBackdrop.classList.remove("open");
+  els.reportConfigModal.classList.remove("open");
+  els.reportConfigModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
+function applyReportPreset(presetName) {
+  const preset = REPORT_PRESETS[presetName] || getDefaultReportConfig();
+  currentReportConfig = { ...preset };
+  els.cfgCover.checked = preset.cover;
+  els.cfgSummary.checked = preset.summary;
+  els.cfgSegments.checked = preset.segments;
+  els.cfgAbnormal.checked = preset.abnormal;
+  els.cfgChecklist.checked = preset.checklist;
+  els.cfgThumbs.checked = preset.thumbs;
+
+  const radios = document.querySelectorAll('input[name="reportPreset"]');
+  radios.forEach((r) => {
+    r.checked = r.value === presetName;
+  });
+}
+
+function collectReportConfig() {
+  return {
+    cover: els.cfgCover.checked,
+    summary: els.cfgSummary.checked,
+    segments: els.cfgSegments.checked,
+    abnormal: els.cfgAbnormal.checked,
+    checklist: els.cfgChecklist.checked,
+    thumbs: els.cfgThumbs.checked
+  };
+}
+
+function syncPresetFromConfig() {
+  const cfg = collectReportConfig();
+  let matchedPreset = null;
+  for (const [name, preset] of Object.entries(REPORT_PRESETS)) {
+    const match = Object.entries(preset).every(([key, val]) => cfg[key] === val);
+    if (match) {
+      matchedPreset = name;
+      break;
+    }
+  }
+  const radios = document.querySelectorAll('input[name="reportPreset"]');
+  radios.forEach((r) => {
+    r.checked = r.value === matchedPreset;
+  });
+}
+
+function getThumbHtml(segment, index, size = "normal", showThumb = true) {
+  if (!showThumb) return "";
   const width = size === "large" ? 60 : 48;
   const height = size === "large" ? 42 : 34;
   const placeholderClass = size === "large" ? "report-abnormal-thumb-placeholder" : "report-seg-thumb-placeholder";
@@ -3882,13 +3985,14 @@ function buildReportSummary(reel, stats) {
   `;
 }
 
-function buildReportSegmentsTable(reel) {
+function buildReportSegmentsTable(reel, config) {
+  const showThumbs = config?.thumbs ?? true;
   const rows = reel.segments.map((seg, index) => {
     const risk = calculateSegmentRisk(seg);
     const hasDamage = seg.damage !== "完好";
     return `
       <tr>
-        <td style="width:58px">${getThumbHtml(seg, index, "normal")}</td>
+        ${showThumbs ? `<td style="width:58px">${getThumbHtml(seg, index, "normal", showThumbs)}</td>` : ""}
         <td style="width:50px;text-align:center;font-weight:700;color:#697179">${index + 1}</td>
         <td><span class="report-seg-code">${escapeHtml(seg.code)}</span></td>
         <td><span class="report-seg-duration">${formatDuration(seg.duration)}</span></td>
@@ -3906,7 +4010,7 @@ function buildReportSegmentsTable(reel) {
       <table class="report-segments-table">
         <thead>
           <tr>
-            <th style="width:58px">缩略图</th>
+            ${showThumbs ? `<th style="width:58px">缩略图</th>` : ""}
             <th style="width:50px;text-align:center">序号</th>
             <th>片段编号</th>
             <th>时长</th>
@@ -3965,7 +4069,8 @@ function buildReportChecklist(reel, stats) {
   `;
 }
 
-function buildReportAbnormal(reel, stats) {
+function buildReportAbnormal(reel, stats, config) {
+  const showThumbs = config?.thumbs ?? true;
   const abnormalSegments = reel.segments
     .map((seg, index) => ({ segment: seg, index, risk: calculateSegmentRisk(seg) }))
     .filter(item => item.segment.damage !== "完好" || item.segment.shift !== "正常" || item.risk.score > 0)
@@ -3991,9 +4096,12 @@ function buildReportAbnormal(reel, stats) {
     const uniqueReasons = [...new Set(reasons)];
     const cardClass = risk.score >= 7 ? "" : "medium";
 
+    const thumbHtml = getThumbHtml(segment, index, "large", showThumbs);
+    const cardStyle = showThumbs ? "" : 'style="grid-template-columns:1fr auto"';
+
     return `
-      <div class="report-abnormal-card ${cardClass}">
-        ${getThumbHtml(segment, index, "large")}
+      <div class="report-abnormal-card ${cardClass}" ${cardStyle}>
+        ${thumbHtml}
         <div class="report-abnormal-info">
           <span class="report-abnormal-code">${index + 1}. ${escapeHtml(segment.code)}</span>
           <div class="report-abnormal-reasons">
@@ -4049,19 +4157,20 @@ function computeReportStats(reel) {
   return { totalDuration, damaged, abnormal, safe, lowRisk, mediumRisk, highRisk, checklistCompleted, checklistTotal };
 }
 
-function generateReportHtml() {
+function generateReportHtml(config) {
   const reel = getActiveReel();
   if (!reel) {
     return `<p style="padding:40px;text-align:center;color:#b54d48">没有可用的胶片卷数据。</p>`;
   }
 
+  const cfg = config || getDefaultReportConfig();
   const stats = computeReportStats(reel);
 
-  const coverHtml = buildReportCover(reel, stats.totalDuration, stats);
-  const summaryHtml = buildReportSummary(reel, stats);
-  const segmentsHtml = buildReportSegmentsTable(reel);
-  const checklistHtml = buildReportChecklist(reel, stats);
-  const abnormalHtml = buildReportAbnormal(reel, stats);
+  const coverHtml = cfg.cover ? buildReportCover(reel, stats.totalDuration, stats) : "";
+  const summaryHtml = cfg.summary ? buildReportSummary(reel, stats) : "";
+  const segmentsHtml = cfg.segments ? buildReportSegmentsTable(reel, cfg) : "";
+  const checklistHtml = cfg.checklist ? buildReportChecklist(reel, stats) : "";
+  const abnormalHtml = cfg.abnormal ? buildReportAbnormal(reel, stats, cfg) : "";
   const footerHtml = buildReportFooter(reel);
 
   return `
@@ -4093,14 +4202,15 @@ function generateReportHtml() {
   `;
 }
 
-function openReportWindow() {
+function openReportWindow(config) {
   const reel = getActiveReel();
   if (!reel) {
     alert("没有可用的胶片卷数据。");
     return;
   }
 
-  const reportHtml = generateReportHtml();
+  const cfg = config || getDefaultReportConfig();
+  const reportHtml = generateReportHtml(cfg);
   const reportWindow = window.open("", "_blank", "width=950,height=1200,resizable=yes,scrollbars=yes,menubar=yes,toolbar=yes");
 
   if (!reportWindow) {
@@ -4118,6 +4228,39 @@ function openReportWindow() {
   reportWindow.document.head.appendChild(baseTag);
 }
 
-els.reportBtn.addEventListener("click", openReportWindow);
+els.reportBtn.addEventListener("click", openReportConfigModal);
+
+els.reportConfigModalClose.addEventListener("click", closeReportConfigModal);
+els.reportConfigModalBackdrop.addEventListener("click", closeReportConfigModal);
+els.reportConfigCancelBtn.addEventListener("click", closeReportConfigModal);
+
+document.querySelectorAll('input[name="reportPreset"]').forEach((radio) => {
+  radio.addEventListener("change", (e) => {
+    if (e.target.checked) {
+      applyReportPreset(e.target.value);
+    }
+  });
+});
+
+[els.cfgCover, els.cfgSummary, els.cfgSegments, els.cfgAbnormal, els.cfgChecklist, els.cfgThumbs].forEach((checkbox) => {
+  checkbox.addEventListener("change", syncPresetFromConfig);
+});
+
+els.reportConfigConfirmBtn.addEventListener("click", () => {
+  const cfg = collectReportConfig();
+  const hasAny = cfg.cover || cfg.summary || cfg.segments || cfg.abnormal || cfg.checklist;
+  if (!hasAny) {
+    alert("请至少选择一个报告章节。");
+    return;
+  }
+  closeReportConfigModal();
+  openReportWindow(cfg);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && els.reportConfigModal.getAttribute("aria-hidden") === "false") {
+    closeReportConfigModal();
+  }
+});
 
 renderAll();

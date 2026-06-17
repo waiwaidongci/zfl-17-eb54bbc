@@ -3895,6 +3895,208 @@ label {
   .report-segments-table tr {
     page-break-inside: avoid;
   }
+
+  .report-section:empty,
+  .report-section > .report-segments-table:only-child tbody:empty,
+  .report-section > .report-abnormal-list:only-child:empty {
+    display: none;
+  }
+
+  .report-cover + .report-section {
+    page-break-before: always;
+  }
+}
+
+.report-config-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 36, 40, 0.5);
+  backdrop-filter: blur(4px);
+  z-index: 998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.report-config-modal-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.report-config-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  overflow: hidden;
+}
+
+.report-config-modal[aria-hidden="false"] {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.report-config-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 253, 247, 0.8);
+  flex-shrink: 0;
+}
+
+.report-config-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.report-config-modal-header h2::before {
+  content: "📋";
+  margin-right: 8px;
+}
+
+.report-config-modal-close {
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 4px;
+}
+
+.report-config-modal-close:hover {
+  color: var(--ink);
+  background: rgba(31, 36, 40, 0.06);
+}
+
+.report-config-modal-body {
+  padding: 22px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.report-config-presets h3,
+.report-config-section h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1f2428;
+}
+
+.report-config-presets {
+  margin-bottom: 24px;
+}
+
+.report-config-preset-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.report-config-preset-option {
+  cursor: pointer;
+  display: block;
+}
+
+.report-config-preset-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.report-config-preset-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 2px solid #d5d1c3;
+  border-radius: 8px;
+  background: #faf9f4;
+  transition: all 0.15s ease;
+}
+
+.report-config-preset-option input[type="radio"]:checked + .report-config-preset-card {
+  border-color: #347d89;
+  background: rgba(52, 125, 137, 0.08);
+  box-shadow: 0 0 0 2px rgba(52, 125, 137, 0.2);
+}
+
+.report-config-preset-card strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #1f2428;
+}
+
+.report-config-preset-card span {
+  font-size: 11px;
+  color: #697179;
+  line-height: 1.4;
+}
+
+.report-config-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+}
+
+.report-config-check-item {
+  display: grid;
+  grid-template-columns: 20px 110px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.report-config-check-item:hover {
+  background: rgba(31, 36, 40, 0.04);
+}
+
+.report-config-check-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #347d89;
+}
+
+.report-config-check-label {
+  font-weight: 700;
+  font-size: 13px;
+  color: #1f2428;
+}
+
+.report-config-check-desc {
+  font-size: 11px;
+  color: #697179;
+}
+
+.report-config-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 253, 247, 0.5);
+  flex-shrink: 0;
 }
 
 .risk-rules-btn {
