@@ -115,7 +115,7 @@ function loadRiskRules() {
   return false;
 }
 
-function saveRiskRules() {
+function persistRiskRules() {
   try {
     const serialized = serializeRules(currentRiskRules);
     localStorage.setItem(riskRulesStorageKey, JSON.stringify(serialized));
@@ -128,7 +128,7 @@ function saveRiskRules() {
 
 function resetRiskRulesToDefault() {
   currentRiskRules = deserializeRules(serializeRules(DEFAULT_RISK_RULES));
-  saveRiskRules();
+  persistRiskRules();
   return getCurrentRiskRules();
 }
 
@@ -248,7 +248,7 @@ function updateRiskRules(newRules) {
   }
 
   currentRiskRules = rules;
-  saveRiskRules();
+  persistRiskRules();
   return { success: true, rules: getCurrentRiskRules() };
 }
 
@@ -262,7 +262,7 @@ function restoreRulesFromBackup(backupRules) {
     return { success: false, errors: ["备份中的规则格式无效"] };
   }
   currentRiskRules = rules;
-  saveRiskRules();
+  persistRiskRules();
   return { success: true, rules: getCurrentRiskRules() };
 }
 
