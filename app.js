@@ -664,6 +664,241 @@ class RestoreBackupCommand extends BaseCommand {
 
 const history = new HistoryManager();
 
+const snapshotStorageKey = "zfl17-snapshots";
+const MAX_SNAPSHOTS = 30;
+
+const SNAPSHOT_OPERATION_LABELS = {
+  batchImport: "批量导入",
+  backupRestore: "备份恢复",
+  reelDelete: "胶片卷删除",
+  riskRuleChange: "风险规则调整",
+  manual: "手动创建快照"
+};
+
+class SnapshotManager {
+  constructor() {
+    this.snapshots = [];
+    this.load();
+  }
+
+  create(operationType) {
+    const totalSegments = state.reels.reduce((sum, r) => sum + r.segments.length, 0);
+    const snapshot = {
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+      operationType: operationType || "manual",
+      operationLabel: SNAPSHOT_OPERATION_LABELS[operationType] || operationType || "手动创建快照",
+      reelCount: state.reels.length,
+      segmentCount: totalSegments,
+      templateCount: state.templates.length,
+      state: structuredClone(state),
+      riskRules: getSerializedRulesForBackup ? getSerializedRulesForBackup() : null
+    };
+
+    this.snapshots.unshift(snapshot);
+
+    if (this.snapshots.length > MAX_SNAPSHOTS) {
+      this.snapshots = this.snapshots.slice(0, MAX_SNAPSHOTS);
+    }
+
+    this.save();
+    return snapshot;
+  }
+
+  restore(snapshotId) {
+    const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+    if (!snapshot) return false;
+
+    const migratedState = migrateLegacyState(snapshot.state);
+    if (migratedState) {
+      state = migratedState;
+    } else if (snapshot.state && Array.isArray(snapshot.state.reels)) {
+      state = structuredClone(snapshot.state);
+      if (!state.version || state.version < 3) {
+        state.version = 3;
+      }
+    } else {
+      return false;
+    }
+
+    const validIds = state.reels.map((r) => r.id);
+    if (!validIds.includes(state.activeReelId)) {
+      state.activeReelId = validIds[0];
+    }
+
+    let compressedThumbCount = snapshot.state._thumbsCompressedCount || 0;
+    state.reels.forEach((reel) => {
+      if (reel.archived === undefined) reel.archived = false;
+      if (!Array.isArray(reel.segments)) reel.segments = [];
+      if (!Array.isArray(reel.checklist)) reel.checklist = [];
+      reel.segments.forEach((seg) => {
+        if (!seg.id) seg.id = crypto.randomUUID();
+        if (seg._thumbCompressed) {
+          delete seg._thumbCompressed;
+        }
+      });
+      reel.checklist = reel.checklist.map((item) => ({
+        priority: "normal",
+        ...item
+      }));
+    });
+    if (state._thumbsCompressedCount) {
+      delete state._thumbsCompressedCount;
+    }
+
+    this._cleanOrphanedChecklistRefs();
+
+    if (snapshot.riskRules) {
+      const result = restoreRulesFromBackup(snapshot.riskRules);
+      if (!result.success) {
+        console.warn("快照恢复：风险规则恢复失败，保留当前规则");
+      }
+    }
+
+    history.clear();
+
+    saveState();
+    state.reels.forEach((reel) => {
+      syncAutoChecklist(reel);
+    });
+    renderAll();
+
+    return true;
+  }
+
+  _cleanOrphanedChecklistRefs() {
+    state.reels.forEach((reel) => {
+      const segmentIds = new Set(reel.segments.map((s) => s.id));
+      reel.checklist = reel.checklist.filter((item) => {
+        if (item.source === "auto" && item.segmentId) {
+          return segmentIds.has(item.segmentId);
+        }
+        return true;
+      });
+    });
+  }
+
+  preview(snapshotId) {
+    const snapshot = this.snapshots.find((s) => s.id === snapshotId);
+    if (!snapshot) return null;
+    return {
+      id: snapshot.id,
+      createdAt: snapshot.createdAt,
+      operationLabel: snapshot.operationLabel,
+      reelCount: snapshot.reelCount,
+      segmentCount: snapshot.segmentCount,
+      templateCount: snapshot.templateCount,
+      reels: snapshot.state.reels.map((r) => ({
+        title: r.title,
+        segmentCount: r.segments.length,
+        archived: r.archived || false
+      })),
+      templates: snapshot.state.templates.map((t) => t.name)
+    };
+  }
+
+  delete(snapshotId) {
+    this.snapshots = this.snapshots.filter((s) => s.id !== snapshotId);
+    this.save();
+  }
+
+  deleteAll() {
+    this.snapshots = [];
+    this.save();
+  }
+
+  getList() {
+    return this.snapshots.map((s) => ({
+      id: s.id,
+      createdAt: s.createdAt,
+      operationType: s.operationType,
+      operationLabel: s.operationLabel,
+      reelCount: s.reelCount,
+      segmentCount: s.segmentCount,
+      templateCount: s.templateCount
+    }));
+  }
+
+  save() {
+    try {
+      const dataToSave = this.snapshots.map((s) => ({
+        ...s,
+        state: this._compressState(s.state)
+      }));
+      localStorage.setItem(snapshotStorageKey, JSON.stringify(dataToSave));
+    } catch (e) {
+      console.warn("快照保存失败，可能超出存储限制:", e);
+      while (this.snapshots.length > 5) {
+        this.snapshots.pop();
+      }
+      try {
+        const dataToSave = this.snapshots.map((s) => ({
+          ...s,
+          state: this._compressState(s.state)
+        }));
+        localStorage.setItem(snapshotStorageKey, JSON.stringify(dataToSave));
+      } catch (e2) {
+        console.warn("快照精简后仍然保存失败:", e2);
+      }
+    }
+  }
+
+  _compressState(s) {
+    if (!s || !Array.isArray(s.reels)) return s;
+    const cloned = structuredClone(s);
+    let thumbsCompressed = 0;
+    cloned.reels.forEach((reel) => {
+      if (Array.isArray(reel.segments)) {
+        reel.segments = reel.segments.map((seg) => {
+          if (seg.thumb && seg.thumb.length > 500) {
+            thumbsCompressed++;
+            return { ...seg, thumb: "", _thumbCompressed: true };
+          }
+          return seg;
+        });
+      }
+    });
+    if (thumbsCompressed > 0) {
+      cloned._thumbsCompressedCount = thumbsCompressed;
+    }
+    return cloned;
+  }
+
+  load() {
+    try {
+      const saved = localStorage.getItem(snapshotStorageKey);
+      if (!saved) {
+        this.snapshots = [];
+        return;
+      }
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) {
+        this.snapshots = [];
+        return;
+      }
+      this.snapshots = parsed.filter((s) => s && s.id && s.state).map((s) => ({
+        ...s,
+        operationLabel: s.operationLabel || SNAPSHOT_OPERATION_LABELS[s.operationType] || s.operationType || "未知操作"
+      }));
+    } catch (e) {
+      console.warn("快照加载失败:", e);
+      this.snapshots = [];
+    }
+  }
+}
+
+const snapshotManager = new SnapshotManager();
+
+function autoSnapshot(operationType) {
+  try {
+    const snapshot = snapshotManager.create(operationType);
+    return snapshot;
+  } catch (e) {
+    console.warn("自动创建快照失败:", e);
+    return null;
+  }
+}
+
 // 风险评分规则和计算函数已移至 risk-rules.js 集中维护
 // 请编辑 risk-rules.js 文件调整评分标准
 
@@ -1034,7 +1269,27 @@ function collectElements() {
     gsChecklistProgress: document.querySelector("#gsChecklistProgress"),
     globalChecklistGrid: document.querySelector("#globalChecklistGrid"),
     globalAbnormalList: document.querySelector("#globalAbnormalList"),
-    gsAbnormalHint: document.querySelector("#gsAbnormalHint")
+    gsAbnormalHint: document.querySelector("#gsAbnormalHint"),
+
+    snapshotBtn: document.querySelector("#snapshotBtn"),
+    snapshotModalBackdrop: document.querySelector("#snapshotModalBackdrop"),
+    snapshotModal: document.querySelector("#snapshotModal"),
+    snapshotModalClose: document.querySelector("#snapshotModalClose"),
+    snapshotCreateBtn: document.querySelector("#snapshotCreateBtn"),
+    snapshotDeleteAllBtn: document.querySelector("#snapshotDeleteAllBtn"),
+    snapshotCount: document.querySelector("#snapshotCount"),
+    snapshotList: document.querySelector("#snapshotList"),
+    snapshotPreviewSection: document.querySelector("#snapshotPreviewSection"),
+    snapshotPreviewClose: document.querySelector("#snapshotPreviewClose"),
+    previewSnapshotTime: document.querySelector("#previewSnapshotTime"),
+    previewSnapshotOpType: document.querySelector("#previewSnapshotOpType"),
+    previewSnapshotReels: document.querySelector("#previewSnapshotReels"),
+    previewSnapshotSegments: document.querySelector("#previewSnapshotSegments"),
+    previewSnapshotTemplates: document.querySelector("#previewSnapshotTemplates"),
+    previewSnapshotReelList: document.querySelector("#previewSnapshotReelList"),
+    previewSnapshotTemplateList: document.querySelector("#previewSnapshotTemplateList"),
+    snapshotRestoreBtn: document.querySelector("#snapshotRestoreBtn"),
+    snapshotCancelPreviewBtn: document.querySelector("#snapshotCancelPreviewBtn")
   };
 }
 
@@ -1360,8 +1615,8 @@ function riskScoreToPriority(score) {
   return "normal";
 }
 
-function syncAutoChecklist() {
-  const reel = getActiveReel();
+function syncAutoChecklist(targetReel) {
+  const reel = targetReel || getActiveReel();
   if (!reel) return;
   const problemSegments = reel.segments.filter(
     (seg) => seg.damage !== "完好" || seg.shift !== "正常"
@@ -1903,6 +2158,8 @@ function deleteReel(reelId) {
     return;
   }
   if (!confirm(`确定要删除胶片卷「${reel.title}」吗？可使用撤销恢复。`)) return;
+
+  autoSnapshot("reelDelete");
 
   const reelIndex = state.reels.findIndex((r) => r.id === reelId);
   const previousActiveId = state.activeReelId;
@@ -2571,6 +2828,8 @@ function handleImportConfirm() {
 
   if (!confirm(`确认将 ${selectedRows.length} 条选中片段导入当前放映清单「${reel.title}」？${selectedRows.some(r => r.status === "dup") ? "重复行将自动分配新编号。" : ""}可使用撤销恢复。`)) return;
 
+  autoSnapshot("batchImport");
+
   const existingCodesSet = new Set(reel.segments.map((s) => s.code));
   const newCodes = [];
   const newSegments = selectedRows.map((row, idx) => {
@@ -2647,7 +2906,9 @@ document.addEventListener("keydown", (event) => {
   }
 
   if (event.key === "Escape") {
-    if (els.backupModal.classList.contains("open")) {
+    if (els.snapshotModal.classList.contains("open")) {
+      closeSnapshotModal();
+    } else if (els.backupModal.classList.contains("open")) {
       closeBackupModal();
     } else if (els.importModal.classList.contains("open")) {
       closeImportModal();
@@ -3474,6 +3735,8 @@ function confirmBackupRestore() {
 
   const mode = document.querySelector('input[name="backupMode"]:checked')?.value || "overwrite";
 
+  autoSnapshot("backupRestore");
+
   let riskRulesRestored = false;
   if (mode === "merge" && backupParsedData.riskRules) {
     if (!confirm("备份文件中包含风险评分规则，是否同时导入这些规则？\n\n选择「确定」将用备份中的规则覆盖当前规则；选择「取消」将保留当前规则。")) {
@@ -3753,6 +4016,8 @@ function saveRiskRules() {
     return;
   }
 
+  autoSnapshot("riskRuleChange");
+
   els.riskRulesErrors.style.display = "none";
   syncAutoChecklist();
   saveState();
@@ -3765,6 +4030,7 @@ function resetRiskRules() {
   if (!confirm("确定要恢复为默认风险规则吗？当前的自定义设置将丢失。")) {
     return;
   }
+  autoSnapshot("riskRuleChange");
   resetRiskRulesToDefault();
   renderRiskRulesForm();
   els.riskRulesErrors.style.display = "none";
@@ -5016,5 +5282,193 @@ els.globalScheduleClearBtn.addEventListener("click", clearGlobalSchedule);
 els.globalScheduleReportBtn.addEventListener("click", openGlobalReportWindow);
 
 loadGlobalScheduleState();
+
+let currentPreviewSnapshotId = null;
+
+function openSnapshotModal() {
+  els.snapshotModal.classList.add("open");
+  els.snapshotModalBackdrop.classList.add("open");
+  els.snapshotModal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+  currentPreviewSnapshotId = null;
+  els.snapshotPreviewSection.style.display = "none";
+  renderSnapshotList();
+}
+
+function closeSnapshotModal() {
+  els.snapshotModal.classList.remove("open");
+  els.snapshotModalBackdrop.classList.remove("open");
+  els.snapshotModal.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+  currentPreviewSnapshotId = null;
+}
+
+function formatSnapshotTime(timestamp) {
+  const d = new Date(timestamp);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function renderSnapshotList() {
+  const list = snapshotManager.getList();
+  els.snapshotCount.textContent = `${list.length} 个快照`;
+
+  if (list.length === 0) {
+    els.snapshotList.innerHTML = `<div class="snapshot-empty">暂无快照，执行高影响操作时会自动创建</div>`;
+    return;
+  }
+
+  els.snapshotList.innerHTML = list.map((s) => `
+    <div class="snapshot-item" data-snapshot-id="${s.id}">
+      <div class="snapshot-item-main">
+        <div class="snapshot-item-time">${formatSnapshotTime(s.createdAt)}</div>
+        <div class="snapshot-item-meta">
+          <span class="snapshot-op-badge ${s.operationType}">${escapeHtml(s.operationLabel)}</span>
+          <span>🎞️ ${s.reelCount} 卷</span>
+          <span>🎬 ${s.segmentCount} 段</span>
+          <span>📋 ${s.templateCount} 模板</span>
+        </div>
+      </div>
+      <div class="snapshot-item-actions">
+        <button type="button" class="snapshot-action-btn snapshot-preview-btn" data-preview-snapshot="${s.id}">预览</button>
+        <button type="button" class="snapshot-action-btn snapshot-restore-item-btn" data-restore-snapshot="${s.id}">恢复</button>
+        <button type="button" class="snapshot-action-btn snapshot-delete-btn" data-delete-snapshot="${s.id}">✕</button>
+      </div>
+    </div>
+  `).join("");
+}
+
+function showSnapshotPreview(snapshotId) {
+  const preview = snapshotManager.preview(snapshotId);
+  if (!preview) {
+    alert("无法预览此快照，数据可能已损坏。");
+    return;
+  }
+
+  currentPreviewSnapshotId = snapshotId;
+
+  els.previewSnapshotTime.textContent = formatSnapshotTime(preview.createdAt);
+  els.previewSnapshotOpType.innerHTML = `<span class="snapshot-op-badge ${preview.operationType || 'manual'}">${escapeHtml(preview.operationLabel)}</span>`;
+  els.previewSnapshotReels.textContent = `${preview.reelCount} 卷`;
+  els.previewSnapshotSegments.textContent = `${preview.segmentCount} 个`;
+  els.previewSnapshotTemplates.textContent = `${preview.templateCount} 个`;
+
+  if (preview.reels && preview.reels.length > 0) {
+    els.previewSnapshotReelList.innerHTML = `<h4>胶片卷</h4>` + preview.reels.map((r) => `
+      <div class="snapshot-preview-reel-item">
+        <span>${escapeHtml(r.title)}${r.archived ? "（已归档）" : ""}</span>
+        <span class="reel-seg-count">${r.segmentCount} 段</span>
+      </div>
+    `).join("");
+  } else {
+    els.previewSnapshotReelList.innerHTML = "";
+  }
+
+  if (preview.templates && preview.templates.length > 0) {
+    els.previewSnapshotTemplateList.innerHTML = `<h4>模板</h4>` + preview.templates.map((t) => `
+      <div class="snapshot-preview-template-item">
+        <span>${escapeHtml(t)}</span>
+      </div>
+    `).join("");
+  } else {
+    els.previewSnapshotTemplateList.innerHTML = "";
+  }
+
+  els.snapshotPreviewSection.style.display = "flex";
+}
+
+function hideSnapshotPreview() {
+  currentPreviewSnapshotId = null;
+  els.snapshotPreviewSection.style.display = "none";
+}
+
+function handleSnapshotRestore(snapshotId) {
+  const preview = snapshotManager.preview(snapshotId);
+  if (!preview) {
+    alert("无法恢复此快照。");
+    return;
+  }
+
+  const snapshot = snapshotManager.snapshots.find((s) => s.id === snapshotId);
+  let thumbWarning = "";
+  let compressedCount = 0;
+  if (snapshot && snapshot.state._thumbsCompressedCount) {
+    compressedCount = snapshot.state._thumbsCompressedCount;
+    thumbWarning = `\n\n注意：由于存储优化，此快照中有 ${compressedCount} 个缩略图已被压缩，恢复后需要重新上传。`;
+  }
+
+  if (!confirm(`确定要恢复到快照「${formatSnapshotTime(preview.createdAt)}」吗？\n\n当前所有数据将被替换，撤销重做历史将被清除。\n此操作不可撤销。${thumbWarning}`)) return;
+
+  const success = snapshotManager.restore(snapshotId);
+  if (success) {
+    let message = "快照恢复成功！撤销重做历史已清除。";
+    if (compressedCount > 0) {
+      message += `\n\n有 ${compressedCount} 个缩略图已被压缩，如需恢复请重新上传。`;
+    }
+    alert(message);
+    renderSnapshotList();
+    hideSnapshotPreview();
+  } else {
+    alert("快照恢复失败，数据可能已损坏。");
+  }
+}
+
+function handleSnapshotDelete(snapshotId) {
+  if (!confirm("确定要删除此快照吗？删除后无法恢复。")) return;
+  snapshotManager.delete(snapshotId);
+  if (currentPreviewSnapshotId === snapshotId) {
+    hideSnapshotPreview();
+  }
+  renderSnapshotList();
+}
+
+function handleSnapshotDeleteAll() {
+  const list = snapshotManager.getList();
+  if (list.length === 0) return;
+  if (!confirm(`确定要清空全部 ${list.length} 个快照吗？此操作不可撤销。`)) return;
+  snapshotManager.deleteAll();
+  hideSnapshotPreview();
+  renderSnapshotList();
+}
+
+function handleManualSnapshot() {
+  const snapshot = autoSnapshot("manual");
+  if (snapshot) {
+    alert("快照创建成功！");
+    renderSnapshotList();
+  } else {
+    alert("快照创建失败，可能超出存储限制。");
+  }
+}
+
+els.snapshotBtn.addEventListener("click", openSnapshotModal);
+els.snapshotModalClose.addEventListener("click", closeSnapshotModal);
+els.snapshotModalBackdrop.addEventListener("click", closeSnapshotModal);
+els.snapshotCreateBtn.addEventListener("click", handleManualSnapshot);
+els.snapshotDeleteAllBtn.addEventListener("click", handleSnapshotDeleteAll);
+els.snapshotPreviewClose.addEventListener("click", hideSnapshotPreview);
+els.snapshotCancelPreviewBtn.addEventListener("click", hideSnapshotPreview);
+els.snapshotRestoreBtn.addEventListener("click", () => {
+  if (currentPreviewSnapshotId) {
+    handleSnapshotRestore(currentPreviewSnapshotId);
+  }
+});
+
+els.snapshotList.addEventListener("click", (event) => {
+  const previewBtn = event.target.closest("[data-preview-snapshot]");
+  const restoreBtn = event.target.closest("[data-restore-snapshot]");
+  const deleteBtn = event.target.closest("[data-delete-snapshot]");
+
+  if (previewBtn) {
+    event.stopPropagation();
+    showSnapshotPreview(previewBtn.dataset.previewSnapshot);
+  } else if (restoreBtn) {
+    event.stopPropagation();
+    handleSnapshotRestore(restoreBtn.dataset.restoreSnapshot);
+  } else if (deleteBtn) {
+    event.stopPropagation();
+    handleSnapshotDelete(deleteBtn.dataset.deleteSnapshot);
+  }
+});
 
 renderAll();

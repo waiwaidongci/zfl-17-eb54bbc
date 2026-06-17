@@ -71,6 +71,7 @@
         <button id="importBtn">批量导入</button>
         <button id="riskRulesBtn" class="risk-rules-btn" title="风险评分规则设置">⚙️ 风险规则</button>
         <button id="backupBtn" class="backup-btn" title="备份与恢复">💾 备份恢复</button>
+        <button id="snapshotBtn" class="snapshot-btn" title="数据快照管理">📸 快照</button>
         <button id="reportBtn" class="report-btn" title="生成离线试映报告">📋 试映报告</button>
         <button id="globalScheduleBtn" class="global-schedule-btn" title="跨胶片卷全局排片">🎬 全局排片</button>
       </section>
@@ -772,6 +773,73 @@
               </div>
               <div class="global-abnormal-list" id="globalAbnormalList"></div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="snapshot-modal-backdrop" id="snapshotModalBackdrop"></div>
+    <div class="snapshot-modal" id="snapshotModal" aria-hidden="true">
+      <div class="snapshot-modal-header">
+        <h2>📸 数据快照管理</h2>
+        <button type="button" class="snapshot-modal-close" id="snapshotModalClose" title="关闭">×</button>
+      </div>
+      <div class="snapshot-modal-body">
+        <div class="snapshot-create-section">
+          <p class="panel-hint">快照会在批量导入、备份恢复、胶片卷删除、风险规则调整等操作前自动创建，也可以手动创建。恢复快照将清除当前撤销重做历史。</p>
+          <div class="snapshot-create-row">
+            <button type="button" class="primary snapshot-create-btn" id="snapshotCreateBtn">📸 立即创建快照</button>
+            <button type="button" class="snapshot-delete-all-btn" id="snapshotDeleteAllBtn">清空全部快照</button>
+          </div>
+        </div>
+
+        <div class="snapshot-divider"></div>
+
+        <div class="snapshot-list-section">
+          <div class="snapshot-list-header">
+            <h3>快照列表</h3>
+            <span class="snapshot-count" id="snapshotCount">0 个快照</span>
+          </div>
+          <div class="snapshot-list" id="snapshotList">
+            <div class="snapshot-empty">暂无快照，执行高影响操作时会自动创建</div>
+          </div>
+        </div>
+
+        <div class="snapshot-preview-section" id="snapshotPreviewSection" style="display:none">
+          <div class="snapshot-divider"></div>
+          <div class="snapshot-preview-header">
+            <h3>快照预览</h3>
+            <button type="button" class="snapshot-preview-close" id="snapshotPreviewClose" title="关闭预览">×</button>
+          </div>
+          <div class="snapshot-preview-grid">
+            <div class="snapshot-preview-item">
+              <span class="snapshot-preview-label">创建时间</span>
+              <span class="snapshot-preview-value" id="previewSnapshotTime">—</span>
+            </div>
+            <div class="snapshot-preview-item">
+              <span class="snapshot-preview-label">操作类型</span>
+              <span class="snapshot-preview-value" id="previewSnapshotOpType">—</span>
+            </div>
+            <div class="snapshot-preview-item">
+              <span class="snapshot-preview-label">胶片卷数</span>
+              <span class="snapshot-preview-value" id="previewSnapshotReels">—</span>
+            </div>
+            <div class="snapshot-preview-item">
+              <span class="snapshot-preview-label">片段总数</span>
+              <span class="snapshot-preview-value" id="previewSnapshotSegments">—</span>
+            </div>
+            <div class="snapshot-preview-item">
+              <span class="snapshot-preview-label">模板数</span>
+              <span class="snapshot-preview-value" id="previewSnapshotTemplates">—</span>
+            </div>
+          </div>
+          <div class="snapshot-preview-details">
+            <div class="snapshot-preview-reels" id="previewSnapshotReelList"></div>
+            <div class="snapshot-preview-templates" id="previewSnapshotTemplateList"></div>
+          </div>
+          <div class="snapshot-preview-actions">
+            <button type="button" class="primary snapshot-restore-btn" id="snapshotRestoreBtn">恢复到此快照</button>
+            <button type="button" class="snapshot-cancel-preview-btn" id="snapshotCancelPreviewBtn">取消</button>
           </div>
         </div>
       </div>
