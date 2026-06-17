@@ -443,6 +443,15 @@
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+    async function waitFor(predicate, message, timeoutMs = 1000, intervalMs = 25) {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt <= timeoutMs) {
+        if (predicate()) return;
+        await wait(intervalMs);
+      }
+      throw new Error(message || "等待条件超时");
+    }
+
     function getAppWindow() {
       return appWindow;
     }
@@ -540,8 +549,7 @@
         initialCount = getActiveReel().segments.length;
       });
 
-      it("通过表单提交新增片段", function () {
-        const w = getAppWindow();
+      it("通过表单提交新增片段", async function () {
         const doc = getAppDocument();
 
         doc.getElementById("codeInput").value = "TEST-001";
@@ -551,16 +559,13 @@
         doc.getElementById("noteInput").value = "测试新增片段";
 
         const reel = getActiveReel();
-        const cmd = new w.AddSegmentCommand(reel.id, {
-          code: "TEST-001",
-          duration: 15,
-          shift: "偏红",
-          damage: "轻微划痕",
-          note: "测试新增片段",
-          thumb: "",
-        });
-        w.appHistory.execute(cmd);
-        w.renderAll();
+        const form = doc.getElementById("segmentForm");
+        form.dispatchEvent(new (getAppWindow().Event)("submit", { bubbles: true, cancelable: true }));
+
+        await waitFor(
+          () => reel.segments.length === initialCount + 1,
+          "表单提交后片段数未按预期增加"
+        );
 
         assert.equal(reel.segments.length, initialCount + 1, "片段数应增加1");
 
@@ -1300,7 +1305,7 @@ TEST-V03,5,不存在的颜色,完好,无效颜色`);
     // ============================================================
     let testResults = [];
 
-    function renderReport() {
+    async function renderReport() {
       const reportEl = document.getElementById("report");
       reportEl.innerHTML = "";
 
@@ -1312,14 +1317,14 @@ TEST-V03,5,不存在的颜色,完好,无效颜色`);
         const suiteResult = { name: suite.name, tests: [], pass: 0, fail: 0 };
         for (const test of suite.tests) {
           try {
-            for (const bf of suite.beforeFns) bf();
-            test.fn();
-            for (const af of suite.afterFns) af();
+            for (const bf of suite.beforeFns) await bf();
+            await test.fn();
+            for (const af of suite.afterFns) await af();
             suiteResult.tests.push({ name: test.name, pass: true });
             suiteResult.pass++;
             totalPass++;
           } catch (e) {
-            for (const af of suite.afterFns) { try { af(); } catch (_) {} }
+            for (const af of suite.afterFns) { try { await af(); } catch (_) {} }
             suiteResult.tests.push({ name: test.name, pass: false, error: e.message });
             suiteResult.fail++;
             totalFail++;
@@ -1390,7 +1395,11 @@ TEST-V03,5,不存在的颜色,完好,无效颜色`);
         return;
       }
       log("开始运行测试...", "info");
-      setTimeout(renderReport, 100);
+      setTimeout(() => {
+        renderReport().catch((e) => {
+          log("测试运行异常: " + e.message, "error");
+        });
+      }, 100);
     });
 
     document.getElementById("expandBtn").addEventListener("click", function () {
@@ -1475,11 +1484,9 @@ TEST-V03,5,不存在的颜色,完好,无效颜色`);
         setTimeout(() => {
           document.getElementById("statusText").textContent = "🧪 正在运行测试...";
           log("自动运行测试...", "info");
-          try {
-            renderReport();
-          } catch (e) {
+          renderReport().catch((e) => {
             log("测试运行异常: " + e.message, "error");
-          }
+          });
         }, 500);
       } catch (e) {
         log("初始化失败: " + e.message, "error");
