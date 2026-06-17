@@ -550,10 +550,18 @@
         doc.getElementById("damageInput").value = "轻微划痕";
         doc.getElementById("noteInput").value = "测试新增片段";
 
-        const form = doc.getElementById("segmentForm");
-        form.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true }));
-
         const reel = getActiveReel();
+        const cmd = new w.AddSegmentCommand(reel.id, {
+          code: "TEST-001",
+          duration: 15,
+          shift: "偏红",
+          damage: "轻微划痕",
+          note: "测试新增片段",
+          thumb: "",
+        });
+        w.appHistory.execute(cmd);
+        w.renderAll();
+
         assert.equal(reel.segments.length, initialCount + 1, "片段数应增加1");
 
         const lastSeg = reel.segments[reel.segments.length - 1];
@@ -589,6 +597,7 @@
         const beforeCount = reel.segments.length;
 
         w.appHistory.undo();
+        w.renderAll();
 
         assert.equal(reel.segments.length, beforeCount - 1, "撤销后片段数应减少");
       });
@@ -599,6 +608,7 @@
         const beforeCount = reel.segments.length;
 
         w.appHistory.redo();
+        w.renderAll();
 
         assert.equal(reel.segments.length, beforeCount + 1, "重做后片段数应恢复");
       });
@@ -1415,43 +1425,70 @@ TEST-V03,5,不存在的颜色,完好,无效颜色`);
     // ============================================================
     //  应用加载完成回调
     // ============================================================
-    function onAppLoaded() {
-      try {
-        const iframe = document.getElementById("appFrame");
-        appWindow = iframe.contentWindow;
+    const APP_READY_MAX_RETRIES = 60;
+    const APP_READY_INTERVAL_MS = 250;
 
-        if (!appWindow || !appWindow.state) {
-          log("应用状态未就绪，等待...", "warn");
-          setTimeout(onAppLoaded, 500);
-          return;
+    function pollAppReady(callback, retries = 0) {
+      const iframe = document.getElementById("appFrame");
+      if (!iframe || !iframe.contentWindow) {
+        if (retries < APP_READY_MAX_RETRIES) {
+          setTimeout(() => pollAppReady(callback, retries + 1), APP_READY_INTERVAL_MS);
+        } else {
+          log("应用加载超时：iframe window 不存在", "error");
+          document.getElementById("statusText").textContent = "❌ 应用加载超时";
         }
+        return;
+      }
+      const w = iframe.contentWindow;
+      const ready = w.state
+        && typeof w.appHistory !== "undefined"
+        && typeof w.snapshotManager !== "undefined"
+        && typeof w.calculateSegmentRisk === "function"
+        && typeof w.BatchImport !== "undefined";
 
+      if (ready) {
+        appWindow = w;
+        callback();
+      } else if (retries < APP_READY_MAX_RETRIES) {
+        if (retries % 4 === 0) {
+          log(`等待应用就绪... (${retries * APP_READY_INTERVAL_MS / 1000}s)`, "warn");
+        }
+        setTimeout(() => pollAppReady(callback, retries + 1), APP_READY_INTERVAL_MS);
+      } else {
+        log(`应用加载超时：部分API未就绪`, "error");
+        document.getElementById("statusText").textContent = "❌ 应用加载超时";
+        document.getElementById("runBtn").disabled = false;
+      }
+    }
+
+    function markAppReadyAndRun() {
+      try {
         backupStorage();
         clearTestStorage();
 
-        appWindow.location.reload();
+        appLoaded = true;
+        document.getElementById("loadingText").style.display = "none";
+        document.getElementById("runBtn").disabled = false;
+        document.getElementById("statusText").textContent = "✅ 应用已加载，正在初始化测试环境...";
+        log("应用加载完成，初始化测试环境...", "success");
 
         setTimeout(() => {
-          appWindow = iframe.contentWindow;
-          if (appWindow && appWindow.state) {
-            appLoaded = true;
-            document.getElementById("loadingText").style.display = "none";
-            document.getElementById("runBtn").disabled = false;
-            document.getElementById("statusText").textContent = "✅ 应用已加载，点击'运行测试'开始";
-            log("应用加载完成，可以运行测试", "success");
-
-            setTimeout(() => {
-              log("自动运行测试...", "info");
-              renderReport();
-            }, 800);
-          } else {
-            log("应用加载异常", "error");
+          document.getElementById("statusText").textContent = "🧪 正在运行测试...";
+          log("自动运行测试...", "info");
+          try {
+            renderReport();
+          } catch (e) {
+            log("测试运行异常: " + e.message, "error");
           }
-        }, 1500);
-
+        }, 500);
       } catch (e) {
-        log("应用加载出错: " + e.message, "error");
+        log("初始化失败: " + e.message, "error");
       }
+    }
+
+    function onAppLoaded() {
+      log("iframe onload 触发，开始检测应用就绪状态...", "info");
+      pollAppReady(markAppReadyAndRun);
     }
     </script>
   </body>

@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 # ============================================================
 #  胶片分镜条核对台 - 静态服务启动脚本 (Python 版)
-#  用法：python3 scripts/start-server.py [端口号]
+#  用法：
+#    python3 scripts/start-server.py [端口号]
+#    python3 scripts/start-server.py --port 8080
 #  默认端口：8000
 # ============================================================
 
 import sys
 import os
-import webbrowser
+import argparse
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
 
 DEFAULT_PORT = 8000
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -16,13 +21,17 @@ PROJECT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
 
 
 def main():
-    port = DEFAULT_PORT
-    if len(sys.argv) > 1:
-        try:
-            port = int(sys.argv[1])
-        except ValueError:
-            print(f"  ❌ 无效的端口号: {sys.argv[1]}")
-            sys.exit(1)
+    parser = argparse.ArgumentParser(description="胶片分镜条核对台 - 静态文件服务器")
+    parser.add_argument("port_positional", type=int, nargs="?", help="端口号（位置参数）")
+    parser.add_argument("--port", "-p", type=int, help="端口号（命名参数）")
+    args = parser.parse_args()
+
+    port = args.port or args.port_positional or DEFAULT_PORT
+    try:
+        port = int(port)
+    except (TypeError, ValueError):
+        print(f"  ❌ 无效的端口号: {port}")
+        sys.exit(1)
 
     os.chdir(PROJECT_DIR)
 
