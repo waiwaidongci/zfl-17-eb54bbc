@@ -513,6 +513,36 @@
               <h4>⚠️ ID 冲突检测</h4>
               <p id="backupConflictText"></p>
             </div>
+            <div class="backup-diff-section" id="backupDiffSection" style="display:none">
+              <div class="backup-diff-summary">
+                <h4>📊 差异摘要</h4>
+                <div class="backup-diff-summary-grid" id="backupDiffSummaryGrid"></div>
+              </div>
+              <div class="backup-diff-detail">
+                <div class="backup-diff-detail-head">
+                  <h4>🎞️ 胶片卷差异明细 <span class="backup-diff-select-hint">（合并模式下可逐卷选择导入）</span></h4>
+                  <label class="backup-select-all-label">
+                    <input type="checkbox" id="backupSelectAllReels" checked />
+                    <span>全选</span>
+                  </label>
+                </div>
+                <div class="backup-reel-diff-list" id="backupReelDiffList"></div>
+              </div>
+              <div class="backup-diff-detail">
+                <div class="backup-diff-detail-head">
+                  <h4>📋 模板差异明细</h4>
+                  <label class="backup-select-all-label">
+                    <input type="checkbox" id="backupSelectAllTemplates" checked />
+                    <span>全选</span>
+                  </label>
+                </div>
+                <div class="backup-template-diff-list" id="backupTemplateDiffList"></div>
+              </div>
+            </div>
+            <div class="backup-impact-info" id="backupImpactInfo" style="display:none">
+              <h4>⚠️ 操作影响说明</h4>
+              <div id="backupImpactText"></div>
+            </div>
             <div class="backup-mode-select">
               <h4>选择恢复方式</h4>
               <div class="backup-mode-options">

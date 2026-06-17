@@ -140,6 +140,8 @@ class HistoryManager {
         return new SwitchReelCommand(data.oldActiveId, data.newActiveId);
       case "archiveReel":
         return new ArchiveReelCommand(data.reelId, data.previousActiveId, data.targetArchived);
+      case "restoreBackup":
+        return new RestoreBackupCommand(data.previousState, data.newState, data.previousRiskRules, data.newRiskRules, data.mode);
       default:
         return null;
     }
@@ -617,6 +619,49 @@ class SwitchReelCommand extends BaseCommand {
   }
 }
 
+class RestoreBackupCommand extends BaseCommand {
+  constructor(previousState, newState, previousRiskRules, newRiskRules, mode) {
+    super("restoreBackup");
+    this.previousState = structuredClone(previousState);
+    this.newState = structuredClone(newState);
+    this.previousRiskRules = previousRiskRules ? structuredClone(previousRiskRules) : null;
+    this.newRiskRules = newRiskRules ? structuredClone(newRiskRules) : null;
+    this.mode = mode;
+  }
+
+  execute() {
+    state = structuredClone(this.newState);
+    if (this.newRiskRules) {
+      restoreRulesFromBackup(this.newRiskRules);
+    }
+    saveState();
+    renderAll();
+  }
+
+  undo() {
+    state = structuredClone(this.previousState);
+    if (this.previousRiskRules) {
+      restoreRulesFromBackup(this.previousRiskRules);
+    }
+    saveState();
+    renderAll();
+  }
+
+  getLabel() {
+    return this.mode === "overwrite" ? "覆盖恢复备份数据" : "合并导入备份数据";
+  }
+
+  _getData() {
+    return {
+      previousState: this.previousState,
+      newState: this.newState,
+      previousRiskRules: this.previousRiskRules,
+      newRiskRules: this.newRiskRules,
+      mode: this.mode
+    };
+  }
+}
+
 const history = new HistoryManager();
 
 // 风险评分规则和计算函数已移至 risk-rules.js 集中维护
@@ -912,6 +957,14 @@ function collectElements() {
     previewExportTime: document.querySelector("#previewExportTime"),
     backupConflictInfo: document.querySelector("#backupConflictInfo"),
     backupConflictText: document.querySelector("#backupConflictText"),
+    backupDiffSection: document.querySelector("#backupDiffSection"),
+    backupDiffSummaryGrid: document.querySelector("#backupDiffSummaryGrid"),
+    backupReelDiffList: document.querySelector("#backupReelDiffList"),
+    backupTemplateDiffList: document.querySelector("#backupTemplateDiffList"),
+    backupSelectAllReels: document.querySelector("#backupSelectAllReels"),
+    backupSelectAllTemplates: document.querySelector("#backupSelectAllTemplates"),
+    backupImpactInfo: document.querySelector("#backupImpactInfo"),
+    backupImpactText: document.querySelector("#backupImpactText"),
     backupConfirmBtn: document.querySelector("#backupConfirmBtn"),
     backupCancelBtn: document.querySelector("#backupCancelBtn"),
 
@@ -2580,6 +2633,7 @@ const REQUIRED_CHECKLIST_FIELDS = ["id", "text", "source", "segmentId", "complet
 
 let backupParsedData = null;
 let backupConflictReport = null;
+let backupDiffResult = null;
 
 function openBackupModal() {
   els.backupModal.classList.add("open");
@@ -2597,6 +2651,7 @@ function closeBackupModal() {
   document.body.style.overflow = "";
   backupParsedData = null;
   backupConflictReport = null;
+  backupDiffResult = null;
 }
 
 function resetBackupImportState() {
@@ -2608,6 +2663,7 @@ function resetBackupImportState() {
   els.backupConfirmBtn.disabled = true;
   backupParsedData = null;
   backupConflictReport = null;
+  backupDiffResult = null;
   const radios = document.querySelectorAll('input[name="backupMode"]');
   radios.forEach((r) => {
     if (r.value === "overwrite") r.checked = true;
@@ -2838,6 +2894,119 @@ function detectInternalDuplicateIds(backupData) {
   };
 }
 
+function computeBackupDiff(backupData) {
+  const currentReelsByTitle = {};
+  state.reels.forEach((r) => {
+    if (!currentReelsByTitle[r.title]) currentReelsByTitle[r.title] = [];
+    currentReelsByTitle[r.title].push(r);
+  });
+
+  const currentReelsById = {};
+  state.reels.forEach((r) => { currentReelsById[r.id] = r; });
+
+  const currentTemplateIds = new Set(state.templates.map((t) => t.id));
+  const currentTemplateNames = new Set(state.templates.map((t) => t.name));
+
+  const reelDiffs = [];
+  let newReelCount = 0;
+  let sameNameReelCount = 0;
+  let totalSegmentDiff = 0;
+  let totalChecklistDiff = 0;
+
+  backupData.reels.forEach((backupReel) => {
+    const sameTitleCurrent = currentReelsByTitle[backupReel.title] || [];
+    const sameIdCurrent = currentReelsById[backupReel.id];
+
+    let diffType = "new";
+    let sameNameMatch = null;
+    let sameIdMatch = null;
+    let segmentCountDiff = backupReel.segments.length;
+    let checklistCountDiff = backupReel.checklist.length;
+    let currentSegments = 0;
+    let currentChecklist = 0;
+
+    if (sameIdCurrent) {
+      diffType = "sameId";
+      sameIdMatch = sameIdCurrent;
+      currentSegments = sameIdCurrent.segments.length;
+      currentChecklist = sameIdCurrent.checklist.length;
+      segmentCountDiff = backupReel.segments.length - sameIdCurrent.segments.length;
+      checklistCountDiff = backupReel.checklist.length - sameIdCurrent.checklist.length;
+    } else if (sameTitleCurrent.length > 0) {
+      diffType = "sameName";
+      sameNameReelCount++;
+      sameNameMatch = sameTitleCurrent[0];
+      currentSegments = sameTitleCurrent[0].segments.length;
+      currentChecklist = sameTitleCurrent[0].checklist.length;
+      segmentCountDiff = backupReel.segments.length - sameTitleCurrent[0].segments.length;
+      checklistCountDiff = backupReel.checklist.length - sameTitleCurrent[0].checklist.length;
+    } else {
+      newReelCount++;
+    }
+
+    totalSegmentDiff += segmentCountDiff;
+    totalChecklistDiff += checklistCountDiff;
+
+    reelDiffs.push({
+      reel: backupReel,
+      diffType,
+      sameNameMatch,
+      sameIdMatch,
+      currentSegments,
+      currentChecklist,
+      backupSegments: backupReel.segments.length,
+      backupChecklist: backupReel.checklist.length,
+      segmentCountDiff,
+      checklistCountDiff,
+      selected: true
+    });
+  });
+
+  const templateDiffs = [];
+  let newTemplateCount = 0;
+  let sameNameTemplateCount = 0;
+  let sameIdTemplateCount = 0;
+
+  backupData.templates.forEach((backupTpl) => {
+    let diffType = "new";
+    const sameIdCurrent = state.templates.find((t) => t.id === backupTpl.id);
+    const sameNameCurrent = state.templates.find((t) => t.name === backupTpl.name);
+
+    if (sameIdCurrent) {
+      diffType = "sameId";
+      sameIdTemplateCount++;
+    } else if (sameNameCurrent) {
+      diffType = "sameName";
+      sameNameTemplateCount++;
+    } else {
+      newTemplateCount++;
+    }
+
+    templateDiffs.push({
+      template: backupTpl,
+      diffType,
+      sameIdMatch: sameIdCurrent,
+      sameNameMatch: sameNameCurrent,
+      selected: true
+    });
+  });
+
+  return {
+    reelDiffs,
+    templateDiffs,
+    summary: {
+      newReelCount,
+      sameNameReelCount,
+      sameIdReelCount: reelDiffs.filter((r) => r.diffType === "sameId").length,
+      totalSegmentDiff,
+      totalChecklistDiff,
+      newTemplateCount,
+      sameNameTemplateCount,
+      sameIdTemplateCount
+    }
+  };
+}
+
 function handleBackupFileSelect(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -2926,8 +3095,180 @@ function validateAndPreviewBackup(data) {
   }
 
   backupParsedData = migratedData;
+  backupDiffResult = computeBackupDiff(migratedData);
+  renderBackupDiff();
+  updateBackupImpactInfo();
   els.backupPreviewWrap.style.display = "flex";
+  els.backupDiffSection.style.display = "block";
+  els.backupImpactInfo.style.display = "block";
   els.backupConfirmBtn.disabled = false;
+}
+
+function renderBackupDiffSummary() {
+  if (!backupDiffResult) return;
+  const s = backupDiffResult.summary;
+  const summaryItems = [
+    { icon: "🆕", label: "新增胶片卷", value: `${s.newReelCount} 卷`, hint: "在当前工作区中不存在的卷" },
+    { icon: "📛", label: "同名卷", value: `${s.sameNameReelCount} 卷`, hint: "名称相同但 ID 不同的卷，合并时需注意" },
+    { icon: "🔄", label: "同 ID 卷", value: `${s.sameIdReelCount} 卷`, hint: "ID 完全相同的卷，合并时会生成新 ID" },
+    { icon: "🎬", label: "片段数量变化", value: s.totalSegmentDiff >= 0 ? `+${s.totalSegmentDiff}` : `${s.totalSegmentDiff}`, hint: "备份比当前多或少的片段总数" },
+    { icon: "✅", label: "检查项数量变化", value: s.totalChecklistDiff >= 0 ? `+${s.totalChecklistDiff}` : `${s.totalChecklistDiff}`, hint: "备份比当前多或少的检查项总数" },
+    { icon: "📋", label: "模板差异", value: `新增 ${s.newTemplateCount} / 同名 ${s.sameNameTemplateCount} / 同ID ${s.sameIdTemplateCount}`, hint: "新增、同名冲突、同ID冲突的模板数" }
+  ];
+  els.backupDiffSummaryGrid.innerHTML = summaryItems.map(item => `
+    <div class="backup-diff-summary-item">
+      <div class="backup-diff-summary-icon">${item.icon}</div>
+      <div class="backup-diff-summary-content">
+        <div class="backup-diff-summary-label">${item.label}</div>
+        <div class="backup-diff-summary-value">${item.value}</div>
+        <div class="backup-diff-summary-hint">${item.hint}</div>
+      </div>
+    </div>
+  `).join("");
+}
+
+function getDiffTypeBadge(diffType) {
+  switch (diffType) {
+    case "new":
+      return `<span class="diff-badge diff-badge-new">新增</span>`;
+    case "sameName":
+      return `<span class="diff-badge diff-badge-same-name">同名冲突</span>`;
+    case "sameId":
+      return `<span class="diff-badge diff-badge-same-id">同ID冲突</span>`;
+    default:
+      return "";
+  }
+}
+
+function renderBackupReelDiff() {
+  if (!backupDiffResult) return;
+  const isMergeMode = document.querySelector('input[name="backupMode"]:checked')?.value === "merge";
+
+  els.backupReelDiffList.innerHTML = backupDiffResult.reelDiffs.map((diff, idx) => {
+    const reel = diff.reel;
+    const totalDuration = reel.segments.reduce((sum, s) => sum + Number(s.duration), 0);
+    const segDiffText = diff.segmentCountDiff >= 0 ? `+${diff.segmentCountDiff}` : `${diff.segmentCountDiff}`;
+    const checkDiffText = diff.checklistCountDiff >= 0 ? `+${diff.checklistCountDiff}` : `${diff.checklistCountDiff}`;
+
+    let conflictInfo = "";
+    if (diff.diffType === "sameName" && diff.sameNameMatch) {
+      conflictInfo = `<div class="diff-conflict-info">⚠️ 与当前「${escapeHtml(diff.sameNameMatch.title)}」同名（片段 ${diff.currentSegments} 个）</div>`;
+    } else if (diff.diffType === "sameId" && diff.sameIdMatch) {
+      conflictInfo = `<div class="diff-conflict-info">🔄 与当前「${escapeHtml(diff.sameIdMatch.title)}」ID 相同，将生成新 ID</div>`;
+    }
+
+    return `
+      <div class="backup-reel-diff-item ${diff.selected ? "selected" : ""}" data-reel-idx="${idx}">
+        <label class="backup-diff-checkbox ${!isMergeMode ? "disabled" : ""}">
+          <input type="checkbox" data-reel-select="${idx}" ${diff.selected ? "checked" : ""} ${!isMergeMode ? "disabled" : ""} />
+          <span class="checkmark"></span>
+        </label>
+        <div class="backup-reel-diff-main">
+          <div class="backup-reel-diff-title-row">
+            <strong class="backup-reel-diff-title">${escapeHtml(reel.title)}</strong>
+            ${getDiffTypeBadge(diff.diffType)}
+            ${reel.archived ? `<span class="reel-badge archive-badge">已归档</span>` : ""}
+          </div>
+          <div class="backup-reel-diff-meta">
+            <span>🎬 ${diff.backupSegments} 个片段 <em>(${segDiffText})</em></span>
+            <span>⏱️ ${formatDuration(totalDuration)}</span>
+            <span>✅ ${diff.backupChecklist} 项检查 <em>(${checkDiffText})</em></span>
+          </div>
+          ${conflictInfo}
+        </div>
+      </div>
+    `;
+  }).join("") || `<div class="empty">备份中没有胶片卷</div>`;
+
+  if (els.backupSelectAllReels) {
+    const allSelected = backupDiffResult.reelDiffs.every(d => d.selected);
+    els.backupSelectAllReels.checked = allSelected;
+    els.backupSelectAllReels.disabled = !isMergeMode;
+  }
+}
+
+function renderBackupTemplateDiff() {
+  if (!backupDiffResult) return;
+  const isMergeMode = document.querySelector('input[name="backupMode"]:checked')?.value === "merge";
+
+  els.backupTemplateDiffList.innerHTML = backupDiffResult.templateDiffs.map((diff, idx) => {
+    const tpl = diff.template;
+
+    let conflictInfo = "";
+    if (diff.diffType === "sameName" && diff.sameNameMatch) {
+      conflictInfo = `<div class="diff-conflict-info">⚠️ 与当前模板「${escapeHtml(diff.sameNameMatch.name)}」同名</div>`;
+    } else if (diff.diffType === "sameId" && diff.sameIdMatch) {
+      conflictInfo = `<div class="diff-conflict-info">🔄 与当前模板「${escapeHtml(diff.sameIdMatch.name)}」ID 相同，将生成新 ID</div>`;
+    }
+
+    return `
+      <div class="backup-template-diff-item ${diff.selected ? "selected" : ""}" data-tpl-idx="${idx}">
+        <label class="backup-diff-checkbox ${!isMergeMode ? "disabled" : ""}">
+          <input type="checkbox" data-tpl-select="${idx}" ${diff.selected ? "checked" : ""} ${!isMergeMode ? "disabled" : ""} />
+          <span class="checkmark"></span>
+        </label>
+        <div class="backup-template-diff-main">
+          <div class="backup-template-diff-title-row">
+            <strong class="backup-template-diff-title">${escapeHtml(tpl.name)}</strong>
+            ${getDiffTypeBadge(diff.diffType)}
+          </div>
+          <div class="backup-template-diff-meta">
+            <span>⏱️ ${formatDuration(tpl.duration)}</span>
+            <span>🎨 ${escapeHtml(tpl.shift)}</span>
+            <span>🔧 ${escapeHtml(tpl.damage)}</span>
+          </div>
+          ${conflictInfo}
+        </div>
+      </div>
+    `;
+  }).join("") || `<div class="empty">备份中没有模板</div>`;
+
+  if (els.backupSelectAllTemplates) {
+    const allSelected = backupDiffResult.templateDiffs.every(d => d.selected);
+    els.backupSelectAllTemplates.checked = allSelected;
+    els.backupSelectAllTemplates.disabled = !isMergeMode;
+  }
+}
+
+function renderBackupDiff() {
+  renderBackupDiffSummary();
+  renderBackupReelDiff();
+  renderBackupTemplateDiff();
+}
+
+function updateBackupImpactInfo() {
+  if (!backupDiffResult || !backupParsedData) return;
+
+  const mode = document.querySelector('input[name="backupMode"]:checked')?.value || "overwrite";
+  const s = backupDiffResult.summary;
+  const selectedReels = backupDiffResult.reelDiffs.filter(d => d.selected);
+  const selectedTemplates = backupDiffResult.templateDiffs.filter(d => d.selected);
+  const selectedSegmentCount = selectedReels.reduce((sum, d) => sum + d.backupSegments, 0);
+  const selectedChecklistCount = selectedReels.reduce((sum, d) => sum + d.backupChecklist, 0);
+
+  let impactHtml = "";
+
+  if (mode === "overwrite") {
+    impactHtml = `
+      <ul class="backup-impact-list">
+        <li><strong>覆盖模式</strong>：当前所有 <em>${state.reels.length}</em> 卷胶片、<em>${state.templates.length}</em> 个模板将被<strong>完全替换</strong>。</li>
+        <li>将恢复备份中的 <em>${backupParsedData.reels.length}</em> 卷胶片（共 <em>${selectedSegmentCount}</em> 个片段、<em>${selectedChecklistCount}</em> 项检查）、<em>${backupParsedData.templates.length}</em> 个模板。</li>
+        <li>当前未保存的修改将丢失，但<strong>可通过「撤销」恢复到恢复前的状态</strong>。</li>
+        ${backupParsedData.riskRules ? `<li>备份包含风险评分规则，将同时恢复。</li>` : ""}
+      </ul>
+    `;
+  } else {
+    impactHtml = `
+      <ul class="backup-impact-list">
+        <li><strong>合并模式</strong>：已选择 <em>${selectedReels.length}/${backupDiffResult.reelDiffs.length}</em> 卷胶片、<em>${selectedTemplates.length}/${backupDiffResult.templateDiffs.length}</em> 个模板导入。</li>
+        <li>将追加 <em>${selectedSegmentCount}</em> 个片段、<em>${selectedChecklistCount}</em> 项检查到当前工作区。</li>
+        <li>同名/同ID冲突项将自动生成新标识，不影响现有数据。</li>
+        <li>当前数据完全保留，<strong>可通过「撤销」撤销本次合并操作</strong>。</li>
+      </ul>
+    `;
+  }
+
+  els.backupImpactText.innerHTML = impactHtml;
 }
 
 function showBackupErrors(errors) {
@@ -3024,7 +3365,7 @@ function applyBackupOverwrite(backupData) {
     state = newState;
     saveState();
     renderAll();
-    return { success: true };
+    return { success: true, newState: structuredClone(newState) };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -3032,6 +3373,13 @@ function applyBackupOverwrite(backupData) {
 
 function applyBackupMerge(backupData) {
   try {
+    const selectedReels = backupDiffResult
+      ? backupDiffResult.reelDiffs.filter(d => d.selected).map(d => d.reel)
+      : backupData.reels;
+    const selectedTemplates = backupDiffResult
+      ? backupDiffResult.templateDiffs.filter(d => d.selected).map(d => d.template)
+      : backupData.templates;
+
     const usedReelIds = new Set(state.reels.map((r) => r.id));
     const usedSegmentIds = new Set();
     const usedTemplateIds = new Set(state.templates.map((t) => t.id));
@@ -3042,7 +3390,12 @@ function applyBackupMerge(backupData) {
       r.checklist.forEach((c) => usedChecklistIds.add(c.id));
     });
 
-    const normalizedData = normalizeImportedBackupData(backupData, {
+    const filteredBackupData = {
+      reels: selectedReels,
+      templates: selectedTemplates
+    };
+
+    const normalizedData = normalizeImportedBackupData(filteredBackupData, {
       reels: usedReelIds,
       segments: usedSegmentIds,
       templates: usedTemplateIds,
@@ -3051,7 +3404,7 @@ function applyBackupMerge(backupData) {
 
     const mergedReels = [...state.reels];
     normalizedData.reels.forEach((reelCopy, index) => {
-      if (reelCopy.id !== backupData.reels[index].id) {
+      if (reelCopy.id !== selectedReels[index].id) {
         reelCopy.title = `${reelCopy.title}（导入）`;
       }
 
@@ -3060,7 +3413,7 @@ function applyBackupMerge(backupData) {
 
     const mergedTemplates = [...state.templates];
     normalizedData.templates.forEach((tplCopy, index) => {
-      if (tplCopy.id !== backupData.templates[index].id) {
+      if (tplCopy.id !== selectedTemplates[index].id) {
         tplCopy.name = `${tplCopy.name}（导入）`;
       }
       mergedTemplates.push(tplCopy);
@@ -3071,7 +3424,12 @@ function applyBackupMerge(backupData) {
     saveState();
     renderAll();
 
-    return { success: true, mergedCount: backupData.reels.length + backupData.templates.length, hasRiskRules: !!backupData.riskRules };
+    return {
+      success: true,
+      mergedCount: selectedReels.length + selectedTemplates.length,
+      hasRiskRules: !!backupData.riskRules,
+      newState: structuredClone(state)
+    };
   } catch (e) {
     return { success: false, error: e.message };
   }
@@ -3081,19 +3439,17 @@ function confirmBackupRestore() {
   if (!backupParsedData) return;
 
   const mode = document.querySelector('input[name="backupMode"]:checked')?.value || "overwrite";
-  const reelCount = backupParsedData.reels.length;
-  const segmentCount = backupParsedData.reels.reduce((sum, r) => sum + r.segments.length, 0);
 
-  let confirmMsg;
-  if (mode === "overwrite") {
-    confirmMsg = `确认用备份数据覆盖当前所有内容？\n\n将恢复：${reelCount} 个胶片卷、${segmentCount} 个片段、${backupParsedData.templates.length} 个模板\n\n此操作将清除当前所有数据，不可撤销。`;
-  } else {
-    confirmMsg = `确认将备份数据合并到当前清单？\n\n将追加：${reelCount} 个胶片卷、${segmentCount} 个片段、${backupParsedData.templates.length} 个模板\n\nID 冲突时会自动生成新 ID。`;
+  let riskRulesRestored = false;
+  if (mode === "merge" && backupParsedData.riskRules) {
+    if (!confirm("备份文件中包含风险评分规则，是否同时导入这些规则？\n\n选择「确定」将用备份中的规则覆盖当前规则；选择「取消」将保留当前规则。")) {
+      backupParsedData.riskRules = null;
+    }
   }
 
-  if (!confirm(confirmMsg)) return;
-
-  const snapshot = structuredClone(state);
+  const previousState = structuredClone(state);
+  const previousRiskRules = getSerializedRulesForBackup ? getSerializedRulesForBackup() : null;
+  const newRiskRules = backupParsedData.riskRules || null;
 
   let result;
   if (mode === "overwrite") {
@@ -3103,36 +3459,70 @@ function confirmBackupRestore() {
   }
 
   if (!result.success) {
-    state = snapshot;
-    saveState();
-    renderAll();
-    alert(`恢复失败，已回滚到原有数据：${result.error}`);
+    alert(`恢复失败：${result.error}`);
     return;
   }
 
-  let riskRulesRestored = false;
-  if (mode === "overwrite" && backupParsedData.riskRules) {
+  if (backupParsedData.riskRules) {
     const restoreResult = restoreRulesFromBackup(backupParsedData.riskRules);
     riskRulesRestored = restoreResult.success;
-  } else if (mode === "merge" && backupParsedData.riskRules) {
-    if (confirm("备份文件中包含风险评分规则，是否同时导入这些规则？\n\n选择「确定」将用备份中的规则覆盖当前规则；选择「取消」将保留当前规则。")) {
-      const restoreResult = restoreRulesFromBackup(backupParsedData.riskRules);
-      riskRulesRestored = restoreResult.success;
-    }
   }
+
+  const newState = structuredClone(state);
+  const cmd = new RestoreBackupCommand(previousState, newState, previousRiskRules, newRiskRules, mode);
+  history.execute(cmd);
 
   if (riskRulesRestored) {
     syncAutoChecklist();
     renderAll();
   }
 
-  history.clear();
-  let successMsg = mode === "overwrite" ? "数据恢复成功！" : `合并成功！已追加 ${result.mergedCount} 项数据。`;
+  const selectedReels = backupDiffResult ? backupDiffResult.reelDiffs.filter(d => d.selected).length : backupParsedData.reels.length;
+  const selectedTemplates = backupDiffResult ? backupDiffResult.templateDiffs.filter(d => d.selected).length : backupParsedData.templates.length;
+  let successMsg = mode === "overwrite"
+    ? "数据恢复成功！"
+    : `合并成功！已追加 ${selectedReels} 卷胶片、${selectedTemplates} 个模板。`;
   if (riskRulesRestored) {
     successMsg += "\n风险评分规则已同步恢复。";
   }
+  successMsg += "\n可通过「撤销」恢复到操作前的状态。";
   alert(successMsg);
   closeBackupModal();
+}
+
+function handleBackupModeChange() {
+  if (backupDiffResult) {
+    renderBackupDiff();
+    updateBackupImpactInfo();
+  }
+}
+
+function handleBackupReelSelect(idx, checked) {
+  if (!backupDiffResult) return;
+  backupDiffResult.reelDiffs[idx].selected = checked;
+  renderBackupDiff();
+  updateBackupImpactInfo();
+}
+
+function handleBackupTemplateSelect(idx, checked) {
+  if (!backupDiffResult) return;
+  backupDiffResult.templateDiffs[idx].selected = checked;
+  renderBackupDiff();
+  updateBackupImpactInfo();
+}
+
+function handleBackupSelectAllReels(checked) {
+  if (!backupDiffResult) return;
+  backupDiffResult.reelDiffs.forEach(d => { d.selected = checked; });
+  renderBackupDiff();
+  updateBackupImpactInfo();
+}
+
+function handleBackupSelectAllTemplates(checked) {
+  if (!backupDiffResult) return;
+  backupDiffResult.templateDiffs.forEach(d => { d.selected = checked; });
+  renderBackupDiff();
+  updateBackupImpactInfo();
 }
 
 els.backupBtn.addEventListener("click", openBackupModal);
@@ -3142,6 +3532,21 @@ els.backupCancelBtn.addEventListener("click", closeBackupModal);
 els.backupExportBtn.addEventListener("click", exportBackup);
 els.backupFileInput.addEventListener("change", handleBackupFileSelect);
 els.backupConfirmBtn.addEventListener("click", confirmBackupRestore);
+
+document.addEventListener("change", (e) => {
+  const target = e.target;
+  if (target.name === "backupMode") {
+    handleBackupModeChange();
+  } else if (target.dataset.reelSelect !== undefined) {
+    handleBackupReelSelect(Number(target.dataset.reelSelect), target.checked);
+  } else if (target.dataset.tplSelect !== undefined) {
+    handleBackupTemplateSelect(Number(target.dataset.tplSelect), target.checked);
+  } else if (target.id === "backupSelectAllReels") {
+    handleBackupSelectAllReels(target.checked);
+  } else if (target.id === "backupSelectAllTemplates") {
+    handleBackupSelectAllTemplates(target.checked);
+  }
+});
 
 function openRiskRulesModal() {
   els.riskRulesModal.classList.add("open");
