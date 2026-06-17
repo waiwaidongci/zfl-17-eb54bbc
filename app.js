@@ -4005,18 +4005,28 @@ function collectRiskRulesFromForm() {
 
 function saveRiskRules() {
   const rules = collectRiskRulesFromForm();
-  const result = updateRiskRules(rules);
+  const validation = validateRiskRules(rules);
 
-  if (!result.success) {
+  if (!validation.valid) {
     els.riskRulesErrors.innerHTML = `
       <strong>规则验证失败：</strong>
-      <ul>${result.errors.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+      <ul>${validation.errors.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
     `;
     els.riskRulesErrors.style.display = "block";
     return;
   }
 
   autoSnapshot("riskRuleChange");
+
+  const result = updateRiskRules(rules);
+  if (!result.success) {
+    els.riskRulesErrors.innerHTML = `
+      <strong>规则保存失败：</strong>
+      <ul>${result.errors.map(e => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
+    `;
+    els.riskRulesErrors.style.display = "block";
+    return;
+  }
 
   els.riskRulesErrors.style.display = "none";
   syncAutoChecklist();
