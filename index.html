@@ -72,6 +72,7 @@
         <button id="riskRulesBtn" class="risk-rules-btn" title="风险评分规则设置">⚙️ 风险规则</button>
         <button id="backupBtn" class="backup-btn" title="备份与恢复">💾 备份恢复</button>
         <button id="reportBtn" class="report-btn" title="生成离线试映报告">📋 试映报告</button>
+        <button id="globalScheduleBtn" class="global-schedule-btn" title="跨胶片卷全局排片">🎬 全局排片</button>
       </section>
 
       <section class="layout layout-with-templates">
@@ -679,6 +680,100 @@
       <div class="report-config-modal-footer">
         <button type="button" id="reportConfigCancelBtn">取消</button>
         <button type="button" class="primary" id="reportConfigConfirmBtn">生成报告</button>
+      </div>
+    </div>
+
+    <div class="global-schedule-backdrop" id="globalScheduleBackdrop"></div>
+    <div class="global-schedule-modal" id="globalScheduleModal" aria-hidden="true">
+      <div class="global-schedule-header">
+        <h2>🎬 全局排片视图</h2>
+        <div class="global-schedule-header-actions">
+          <button type="button" id="globalScheduleClearBtn" class="global-clear-btn" title="清空排片">清空</button>
+          <button type="button" id="globalScheduleReportBtn" class="primary global-report-btn" title="生成联合试映报告">📋 生成联合报告</button>
+          <button type="button" class="global-schedule-close" id="globalScheduleClose" title="关闭">×</button>
+        </div>
+      </div>
+      <div class="global-schedule-body">
+        <div class="global-schedule-stats">
+          <div class="global-stat-card">
+            <span>选入卷数</span>
+            <strong id="gsReelCount">0 卷</strong>
+          </div>
+          <div class="global-stat-card highlight-duration">
+            <span>整场总时长</span>
+            <strong id="gsTotalDuration">0:00</strong>
+          </div>
+          <div class="global-stat-card">
+            <span>片段总数</span>
+            <strong id="gsSegmentCount">0</strong>
+          </div>
+          <div class="global-stat-card highlight-risk">
+            <span>高风险片段</span>
+            <strong id="gsHighRiskCount">0</strong>
+          </div>
+          <div class="global-stat-card highlight-checklist">
+            <span>待办完成率</span>
+            <strong id="gsChecklistRate">0%</strong>
+          </div>
+        </div>
+
+        <div class="global-schedule-main-grid">
+          <div class="global-left-col">
+            <div class="global-section-panel">
+              <div class="global-section-head">
+                <h3>📚 可选胶片卷</h3>
+                <span class="global-section-hint">点击加入排片</span>
+              </div>
+              <div class="global-reel-pool" id="globalReelPool"></div>
+            </div>
+          </div>
+
+          <div class="global-right-col">
+            <div class="global-section-panel">
+              <div class="global-section-head">
+                <h3>🎞️ 排片序列（拖拽调整顺序）</h3>
+                <span class="global-section-hint" id="gsReelOrderHint">尚未选入任何胶片卷</span>
+              </div>
+              <div class="global-schedule-list" id="globalScheduleList"></div>
+            </div>
+
+            <div class="global-section-panel">
+              <div class="global-section-head">
+                <h3>📊 跨卷高风险分布</h3>
+                <span class="global-section-hint">按时间顺序展示整场风险</span>
+              </div>
+              <div class="global-risk-legend">
+                <span class="legend-item"><span class="legend-dot risk-legend-safe"></span> 安全</span>
+                <span class="legend-item"><span class="legend-dot risk-legend-low"></span> 低风险</span>
+                <span class="legend-item"><span class="legend-dot risk-legend-medium"></span> 中风险</span>
+                <span class="legend-item"><span class="legend-dot risk-legend-high"></span> 高风险</span>
+              </div>
+              <div class="global-risk-scroll">
+                <div class="global-risk-bar" id="globalRiskBar"></div>
+              </div>
+              <div class="global-risk-reel-labels" id="globalRiskReelLabels"></div>
+            </div>
+
+            <div class="global-section-panel">
+              <div class="global-section-head">
+                <h3>✅ 待办完成情况</h3>
+                <span class="global-section-hint" id="gsChecklistStats">0 / 0 项已完成</span>
+              </div>
+              <div class="global-checklist-progress-bar">
+                <div class="global-checklist-progress-fill" id="gsChecklistProgress"></div>
+              </div>
+              <div class="global-checklist-grid" id="globalChecklistGrid"></div>
+            </div>
+
+            <div class="global-section-panel">
+              <div class="global-section-head">
+                <h3>⚠️ 异常片段汇总</h3>
+                <span class="global-section-hint" id="gsAbnormalHint">共 0 条异常</span>
+              </div>
+              <div class="global-abnormal-list" id="globalAbnormalList"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

@@ -1012,7 +1012,29 @@ function collectElements() {
     cfgSegments: document.querySelector("#cfgSegments"),
     cfgAbnormal: document.querySelector("#cfgAbnormal"),
     cfgChecklist: document.querySelector("#cfgChecklist"),
-    cfgThumbs: document.querySelector("#cfgThumbs")
+    cfgThumbs: document.querySelector("#cfgThumbs"),
+
+    globalScheduleBtn: document.querySelector("#globalScheduleBtn"),
+    globalScheduleBackdrop: document.querySelector("#globalScheduleBackdrop"),
+    globalScheduleModal: document.querySelector("#globalScheduleModal"),
+    globalScheduleClose: document.querySelector("#globalScheduleClose"),
+    globalScheduleClearBtn: document.querySelector("#globalScheduleClearBtn"),
+    globalScheduleReportBtn: document.querySelector("#globalScheduleReportBtn"),
+    gsReelCount: document.querySelector("#gsReelCount"),
+    gsTotalDuration: document.querySelector("#gsTotalDuration"),
+    gsSegmentCount: document.querySelector("#gsSegmentCount"),
+    gsHighRiskCount: document.querySelector("#gsHighRiskCount"),
+    gsChecklistRate: document.querySelector("#gsChecklistRate"),
+    globalReelPool: document.querySelector("#globalReelPool"),
+    globalScheduleList: document.querySelector("#globalScheduleList"),
+    gsReelOrderHint: document.querySelector("#gsReelOrderHint"),
+    globalRiskBar: document.querySelector("#globalRiskBar"),
+    globalRiskReelLabels: document.querySelector("#globalRiskReelLabels"),
+    gsChecklistStats: document.querySelector("#gsChecklistStats"),
+    gsChecklistProgress: document.querySelector("#gsChecklistProgress"),
+    globalChecklistGrid: document.querySelector("#globalChecklistGrid"),
+    globalAbnormalList: document.querySelector("#globalAbnormalList"),
+    gsAbnormalHint: document.querySelector("#gsAbnormalHint")
   };
 }
 
@@ -4261,6 +4283,738 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && els.reportConfigModal.getAttribute("aria-hidden") === "false") {
     closeReportConfigModal();
   }
+  if (e.key === "Escape" && els.globalScheduleModal.getAttribute("aria-hidden") === "false") {
+    closeGlobalScheduleModal();
+  }
 });
+
+let globalScheduleState = {
+  selectedReelIds: [],
+  draggedReelId: null
+};
+
+const globalScheduleStorageKey = "zfl17-global-schedule";
+
+function saveGlobalScheduleState() {
+  try {
+    localStorage.setItem(globalScheduleStorageKey, JSON.stringify({
+      selectedReelIds: globalScheduleState.selectedReelIds
+    }));
+  } catch (e) {
+    console.warn("Failed to save global schedule state:", e);
+  }
+}
+
+function loadGlobalScheduleState() {
+  try {
+    const saved = localStorage.getItem(globalScheduleStorageKey);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed.selectedReelIds)) {
+        const validIds = state.reels.map(r => r.id);
+        globalScheduleState.selectedReelIds = parsed.selectedReelIds.filter(id => validIds.includes(id));
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to load global schedule state:", e);
+  }
+}
+
+function openGlobalScheduleModal() {
+  loadGlobalScheduleState();
+  els.globalScheduleBackdrop.classList.add("open");
+  els.globalScheduleModal.classList.add("open");
+  els.globalScheduleModal.setAttribute("aria-hidden", "false");
+  renderGlobalSchedule();
+}
+
+function closeGlobalScheduleModal() {
+  els.globalScheduleBackdrop.classList.remove("open");
+  els.globalScheduleModal.classList.remove("open");
+  els.globalScheduleModal.setAttribute("aria-hidden", "true");
+}
+
+function getGlobalSelectedReels() {
+  return globalScheduleState.selectedReelIds
+    .map(id => state.reels.find(r => r.id === id))
+    .filter(Boolean);
+}
+
+function computeGlobalScheduleStats() {
+  const reels = getGlobalSelectedReels();
+  let totalDuration = 0;
+  let totalSegments = 0;
+  let highRiskCount = 0;
+  let checklistTotal = 0;
+  let checklistCompleted = 0;
+  const allSegments = [];
+  const abnormalSegments = [];
+
+  reels.forEach((reel, reelIdx) => {
+    const reelStartDuration = totalDuration;
+    reel.segments.forEach((seg, segIdx) => {
+      const risk = window.calculateSegmentRisk(seg);
+      const absoluteStart = totalDuration;
+      totalDuration += Number(seg.duration) || 0;
+      totalSegments++;
+
+      const segInfo = {
+        ...seg,
+        reelId: reel.id,
+        reelTitle: reel.title,
+        reelIndex: reelIdx,
+        segmentReelIndex: segIdx,
+        absoluteStart,
+        absoluteEnd: totalDuration,
+        risk
+      };
+      allSegments.push(segInfo);
+
+      if (risk.css === "risk-high") {
+        highRiskCount++;
+      }
+      if (seg.damage !== "完好" || seg.shift !== "正常" || risk.score >= 4) {
+        abnormalSegments.push(segInfo);
+      }
+    });
+
+    if (Array.isArray(reel.checklist)) {
+      reel.checklist.forEach(item => {
+        checklistTotal++;
+        if (item.completed) {
+          checklistCompleted++;
+        }
+      });
+    }
+  });
+
+  abnormalSegments.sort((a, b) => b.risk.score - a.risk.score);
+
+  return {
+    reelCount: reels.length,
+    totalDuration,
+    totalSegments,
+    highRiskCount,
+    checklistTotal,
+    checklistCompleted,
+    checklistRate: checklistTotal > 0 ? Math.round((checklistCompleted / checklistTotal) * 100) : 0,
+    allSegments,
+    abnormalSegments,
+    reels
+  };
+}
+
+function renderGlobalReelPool() {
+  const availableReels = state.reels.filter(r => !r.archived);
+  const selectedIdSet = new Set(globalScheduleState.selectedReelIds);
+
+  if (availableReels.length === 0) {
+    els.globalReelPool.innerHTML = `<div class="reel-card-empty">尚未创建任何胶片卷</div>`;
+    return;
+  }
+
+  els.globalReelPool.innerHTML = availableReels.map(reel => {
+    const isAdded = selectedIdSet.has(reel.id);
+    const segCount = reel.segments.length;
+    const duration = reel.segments.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+    return `
+      <div class="global-reel-pool-card ${isAdded ? "added" : ""}" 
+           data-reel-id="${reel.id}" 
+           ${isAdded ? "" : `title="点击加入排片"`}>
+        <div class="global-reel-pool-info">
+          <div class="global-reel-pool-title">${escapeHtml(reel.title)}</div>
+          <div class="global-reel-pool-meta">${segCount} 段 · ${formatDuration(duration)}</div>
+        </div>
+        <button type="button" class="global-reel-pool-action" ${isAdded ? "disabled" : ""}>
+          ${isAdded ? "✓" : "+"}
+        </button>
+      </div>
+    `;
+  }).join("");
+
+  els.globalReelPool.querySelectorAll(".global-reel-pool-card:not(.added)").forEach(card => {
+    card.addEventListener("click", () => {
+      const reelId = card.dataset.reelId;
+      if (!globalScheduleState.selectedReelIds.includes(reelId)) {
+        globalScheduleState.selectedReelIds.push(reelId);
+        saveGlobalScheduleState();
+        renderGlobalSchedule();
+      }
+    });
+  });
+}
+
+function renderGlobalScheduleList() {
+  const reels = getGlobalSelectedReels();
+
+  if (reels.length === 0) {
+    els.globalScheduleList.innerHTML = "";
+    els.gsReelOrderHint.textContent = "尚未选入任何胶片卷";
+    return;
+  }
+
+  els.gsReelOrderHint.textContent = `共 ${reels.length} 卷，${formatDuration(reels.reduce((s, r) => s + r.segments.reduce((a, seg) => a + (Number(seg.duration) || 0), 0), 0))}`;
+
+  els.globalScheduleList.innerHTML = reels.map((reel, idx) => {
+    const duration = reel.segments.reduce((sum, s) => sum + (Number(s.duration) || 0), 0);
+    const highRisk = reel.segments.filter(s => {
+      const r = window.calculateSegmentRisk(s);
+      return r.css === "risk-high";
+    }).length;
+    return `
+      <div class="global-schedule-item" data-reel-id="${reel.id}" draggable="true">
+        <div class="global-schedule-order">${idx + 1}</div>
+        <div class="global-schedule-item-info">
+          <div class="global-schedule-item-title">${escapeHtml(reel.title)}</div>
+          <div class="global-schedule-item-meta">
+            <span>🎞️ ${reel.segments.length} 段</span>
+            <span>⏱️ ${formatDuration(duration)}</span>
+            ${highRisk > 0 ? `<span style="color:var(--red)">⚠️ ${highRisk} 高风险</span>` : ""}
+          </div>
+        </div>
+        <div class="global-schedule-item-move">
+          <button type="button" class="global-schedule-move-btn" data-move="up" data-reel-id="${reel.id}" ${idx === 0 ? "disabled" : ""} title="上移">↑</button>
+          <button type="button" class="global-schedule-move-btn" data-move="down" data-reel-id="${reel.id}" ${idx === reels.length - 1 ? "disabled" : ""} title="下移">↓</button>
+        </div>
+        <button type="button" class="global-schedule-item-remove" data-remove-reel="${reel.id}" title="移出排片">×</button>
+      </div>
+    `;
+  }).join("");
+
+  els.globalScheduleList.querySelectorAll(".global-schedule-move-btn").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const reelId = btn.dataset.reelId;
+      const move = btn.dataset.move;
+      const currentIdx = globalScheduleState.selectedReelIds.indexOf(reelId);
+      if (currentIdx === -1) return;
+
+      if (move === "up" && currentIdx > 0) {
+        const newIdx = currentIdx - 1;
+        [globalScheduleState.selectedReelIds[currentIdx], globalScheduleState.selectedReelIds[newIdx]] = 
+        [globalScheduleState.selectedReelIds[newIdx], globalScheduleState.selectedReelIds[currentIdx]];
+        saveGlobalScheduleState();
+        renderGlobalSchedule();
+      } else if (move === "down" && currentIdx < globalScheduleState.selectedReelIds.length - 1) {
+        const newIdx = currentIdx + 1;
+        [globalScheduleState.selectedReelIds[currentIdx], globalScheduleState.selectedReelIds[newIdx]] = 
+        [globalScheduleState.selectedReelIds[newIdx], globalScheduleState.selectedReelIds[currentIdx]];
+        saveGlobalScheduleState();
+        renderGlobalSchedule();
+      }
+    });
+  });
+
+  els.globalScheduleList.querySelectorAll("[data-remove-reel]").forEach(btn => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const reelId = btn.dataset.removeReel;
+      globalScheduleState.selectedReelIds = globalScheduleState.selectedReelIds.filter(id => id !== reelId);
+      saveGlobalScheduleState();
+      renderGlobalSchedule();
+    });
+  });
+
+  const items = els.globalScheduleList.querySelectorAll(".global-schedule-item");
+  items.forEach(item => {
+    item.addEventListener("dragstart", (e) => {
+      globalScheduleState.draggedReelId = item.dataset.reelId;
+      item.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+
+    item.addEventListener("dragend", () => {
+      item.classList.remove("dragging");
+      globalScheduleState.draggedReelId = null;
+      items.forEach(i => i.classList.remove("drag-over"));
+    });
+
+    item.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      item.classList.add("drag-over");
+    });
+
+    item.addEventListener("dragleave", () => {
+      item.classList.remove("drag-over");
+    });
+
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      item.classList.remove("drag-over");
+      const targetReelId = item.dataset.reelId;
+      const draggedId = globalScheduleState.draggedReelId;
+      if (!draggedId || draggedId === targetReelId) return;
+
+      const draggedIdx = globalScheduleState.selectedReelIds.indexOf(draggedId);
+      const targetIdx = globalScheduleState.selectedReelIds.indexOf(targetReelId);
+      if (draggedIdx === -1 || targetIdx === -1) return;
+
+      globalScheduleState.selectedReelIds.splice(draggedIdx, 1);
+      globalScheduleState.selectedReelIds.splice(targetIdx, 0, draggedId);
+      saveGlobalScheduleState();
+      renderGlobalSchedule();
+    });
+  });
+}
+
+function renderGlobalStats() {
+  const stats = computeGlobalScheduleStats();
+
+  els.gsReelCount.textContent = `${stats.reelCount} 卷`;
+  els.gsTotalDuration.textContent = formatDuration(stats.totalDuration);
+  els.gsSegmentCount.textContent = String(stats.totalSegments);
+  els.gsHighRiskCount.textContent = String(stats.highRiskCount);
+  els.gsChecklistRate.textContent = `${stats.checklistRate}%`;
+}
+
+function renderGlobalRiskDistribution() {
+  const stats = computeGlobalScheduleStats();
+  const reels = stats.reels;
+
+  if (reels.length === 0 || stats.totalDuration === 0) {
+    els.globalRiskBar.innerHTML = "";
+    els.globalRiskReelLabels.innerHTML = "";
+    return;
+  }
+
+  const totalDur = stats.totalDuration;
+  const minPixelWidth = 8;
+  const totalAvailableWidth = 1200;
+
+  let html = "";
+  const labelsHtml = [];
+
+  reels.forEach((reel, reelIdx) => {
+    if (reelIdx > 0) {
+      html += `<div class="global-risk-reel-divider" title="卷分隔"></div>`;
+    }
+
+    const reelSegments = stats.allSegments.filter(s => s.reelId === reel.id);
+    reelSegments.forEach(seg => {
+      const dur = Number(seg.duration) || 0;
+      const widthPct = (dur / totalDur) * 100;
+      const widthPx = Math.max(minPixelWidth, (widthPct / 100) * totalAvailableWidth);
+      const risk = seg.risk;
+      html += `
+        <div class="global-risk-segment ${risk.css}" 
+             style="width:${widthPct}%; min-width:${widthPx}px"
+             title="${escapeHtml(reel.title)} - ${escapeHtml(seg.code)}&#10;时长: ${dur}秒&#10;风险: ${risk.label} (${risk.score}分)&#10;位置: ${formatDuration(seg.absoluteStart)} - ${formatDuration(seg.absoluteEnd)}">
+        </div>
+      `;
+    });
+
+    const reelDur = reel.segments.reduce((s, seg) => s + (Number(seg.duration) || 0), 0);
+    labelsHtml.push(`
+      <span class="global-risk-reel-tag">
+        <span class="global-risk-reel-tag-dot"></span>
+        第${reelIdx + 1}卷 · ${escapeHtml(reel.title)} · ${formatDuration(reelDur)}
+      </span>
+    `);
+  });
+
+  els.globalRiskBar.innerHTML = html;
+  els.globalRiskReelLabels.innerHTML = labelsHtml.join("");
+}
+
+function renderGlobalChecklist() {
+  const stats = computeGlobalScheduleStats();
+  const reels = stats.reels;
+
+  els.gsChecklistStats.textContent = `${stats.checklistCompleted} / ${stats.checklistTotal} 项已完成`;
+  els.gsChecklistProgress.style.width = `${stats.checklistRate}%`;
+
+  if (reels.length === 0) {
+    els.globalChecklistGrid.innerHTML = "";
+    return;
+  }
+
+  const prioritySort = { urgent: 0, important: 1, normal: 2 };
+
+  els.globalChecklistGrid.innerHTML = reels.map(reel => {
+    const items = Array.isArray(reel.checklist) ? [...reel.checklist].sort((a, b) => {
+      const pa = prioritySort[a.priority] ?? 2;
+      const pb = prioritySort[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return (a.completed ? 1 : 0) - (b.completed ? 1 : 0);
+    }) : [];
+    const completed = items.filter(i => i.completed).length;
+    const total = items.length;
+    const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const allDone = total > 0 && completed === total;
+
+    return `
+      <div class="global-checklist-reel-card">
+        <div class="global-checklist-reel-head">
+          <span class="global-checklist-reel-title" title="${escapeHtml(reel.title)}">${escapeHtml(reel.title)}</span>
+          <span class="global-checklist-reel-rate ${allDone ? "done" : ""}">${rate}%</span>
+        </div>
+        <div class="global-checklist-mini">
+          ${items.length === 0 ? 
+            `<div class="global-checklist-mini-item" style="opacity:0.6">
+              <span class="global-checklist-mini-dot"></span>
+              暂无待办项
+            </div>` :
+            items.slice(0, 8).map(item => `
+              <div class="global-checklist-mini-item priority-${item.priority || "normal"} ${item.completed ? "done" : ""}" title="${escapeHtml(item.text)}">
+                <span class="global-checklist-mini-dot"></span>
+                <span>${escapeHtml(item.text.length > 24 ? item.text.slice(0, 24) + "…" : item.text)}</span>
+              </div>
+            `).join("")
+          }
+          ${items.length > 8 ? `
+            <div class="global-checklist-mini-item" style="opacity:0.6">
+              <span class="global-checklist-mini-dot" style="background:transparent"></span>
+              <span>...还有 ${items.length - 8} 项</span>
+            </div>
+          ` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderGlobalAbnormal() {
+  const stats = computeGlobalScheduleStats();
+  const abnormal = stats.abnormalSegments;
+
+  els.gsAbnormalHint.textContent = `共 ${abnormal.length} 条异常`;
+
+  if (abnormal.length === 0) {
+    els.globalAbnormalList.innerHTML = "";
+    return;
+  }
+
+  els.globalAbnormalList.innerHTML = abnormal.slice(0, 50).map(seg => {
+    const tags = [];
+    if (seg.shift !== "正常") {
+      tags.push(`<span class="global-abnormal-tag">${escapeHtml(seg.shift)}</span>`);
+    }
+    if (seg.damage !== "完好") {
+      tags.push(`<span class="global-abnormal-tag damage-tag">${escapeHtml(seg.damage)}</span>`);
+    }
+    return `
+      <div class="global-abnormal-item">
+        <span class="global-abnormal-reel-tag">第${seg.reelIndex + 1}卷</span>
+        <div class="global-abnormal-main">
+          <div class="global-abnormal-code-row">
+            <span class="global-abnormal-code">${escapeHtml(seg.code)}</span>
+            <span class="global-abnormal-risk-tag ${seg.risk.css}">${seg.risk.label} ${seg.risk.score}分</span>
+            <div class="global-abnormal-tags">${tags.join("")}</div>
+          </div>
+          ${seg.note ? `<div class="global-abnormal-note">${escapeHtml(seg.note)}</div>` : ""}
+        </div>
+        <span class="global-abnormal-duration">${formatDuration(seg.absoluteStart)} - ${formatDuration(seg.absoluteEnd)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderGlobalSchedule() {
+  renderGlobalReelPool();
+  renderGlobalScheduleList();
+  renderGlobalStats();
+  renderGlobalRiskDistribution();
+  renderGlobalChecklist();
+  renderGlobalAbnormal();
+}
+
+function clearGlobalSchedule() {
+  if (globalScheduleState.selectedReelIds.length === 0) return;
+  if (!confirm("确定要清空当前排片吗？已选的胶片卷顺序将被重置。")) return;
+  globalScheduleState.selectedReelIds = [];
+  saveGlobalScheduleState();
+  renderGlobalSchedule();
+}
+
+function buildGlobalReportCover(stats) {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return `
+    <div class="report-cover">
+      <h1>联合试映报告</h1>
+      <p class="report-cover-subtitle">跨胶片卷全局排片 · ${dateStr}</p>
+      <div class="report-cover-meta">
+        <div><strong>${stats.reelCount}</strong><span>胶片卷数</span></div>
+        <div><strong>${stats.totalSegments}</strong><span>片段总数</span></div>
+        <div><strong>${formatDuration(stats.totalDuration)}</strong><span>总时长</span></div>
+        <div><strong>${stats.highRiskCount}</strong><span>高风险片段</span></div>
+        <div><strong>${stats.checklistCompleted}/${stats.checklistTotal}</strong><span>待办完成</span></div>
+      </div>
+    </div>
+  `;
+}
+
+function buildGlobalReportReelOrder(stats) {
+  if (stats.reels.length === 0) return "";
+  return `
+    <section class="report-section">
+      <h2>卷排片顺序</h2>
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>顺序</th>
+            <th>胶片卷名称</th>
+            <th>片段数</th>
+            <th>时长</th>
+            <th>起始时间</th>
+            <th>结束时间</th>
+            <th>高风险</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(function() {
+            let runningTime = 0;
+            return stats.reels.map((reel, idx) => {
+              const segCount = reel.segments.length;
+              const dur = reel.segments.reduce((s, seg) => s + (Number(seg.duration) || 0), 0);
+              const highRisk = reel.segments.filter(s => {
+                const r = window.calculateSegmentRisk(s);
+                return r.css === "risk-high";
+              }).length;
+              const start = runningTime;
+              runningTime += dur;
+              return `
+                <tr>
+                  <td><strong>第 ${idx + 1} 卷</strong></td>
+                  <td>${escapeHtml(reel.title)}</td>
+                  <td>${segCount}</td>
+                  <td>${formatDuration(dur)}</td>
+                  <td>${formatDuration(start)}</td>
+                  <td>${formatDuration(runningTime)}</td>
+                  <td>${highRisk > 0 ? `<span class="risk-badge risk-high">${highRisk}</span>` : "0"}</td>
+                </tr>
+              `;
+            }).join("");
+          })()}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function buildGlobalReportSegmentsTable(stats, includeThumbs) {
+  if (stats.allSegments.length === 0) return "";
+  return `
+    <section class="report-section">
+      <h2>完整片段顺序表</h2>
+      <table class="report-table">
+        <thead>
+          <tr>
+            ${includeThumbs ? "<th>缩略图</th>" : ""}
+            <th>全局序</th>
+            <th>卷</th>
+            <th>片段</th>
+            <th>时长</th>
+            <th>起始</th>
+            <th>结束</th>
+            <th>颜色</th>
+            <th>破损</th>
+            <th>风险</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stats.allSegments.map((seg, idx) => `
+            <tr class="${seg.damage !== "完好" ? "abnormal-row" : ""}">
+              ${includeThumbs ? `<td>${seg.thumb ? `<img src="${seg.thumb}" class="report-thumb" />` : '<div class="report-thumb-placeholder">—</div>'}</td>` : ""}
+              <td><strong>#${idx + 1}</strong></td>
+              <td>第${seg.reelIndex + 1}卷</td>
+              <td><strong>${escapeHtml(seg.code)}</strong></td>
+              <td>${seg.duration}s</td>
+              <td>${formatDuration(seg.absoluteStart)}</td>
+              <td>${formatDuration(seg.absoluteEnd)}</td>
+              <td>${escapeHtml(seg.shift)}</td>
+              <td>${seg.damage !== "完好" ? `<span class="risk-badge risk-high">${escapeHtml(seg.damage)}</span>` : escapeHtml(seg.damage)}</td>
+              <td><span class="risk-badge ${seg.risk.css}">${seg.risk.label} ${seg.risk.score}</span></td>
+              <td>${escapeHtml(seg.note || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function buildGlobalReportAbnormal(stats, includeThumbs) {
+  if (stats.abnormalSegments.length === 0) return "";
+  return `
+    <section class="report-section report-abnormal-section">
+      <h2>异常片段汇总（${stats.abnormalSegments.length} 条）</h2>
+      <table class="report-table">
+        <thead>
+          <tr>
+            ${includeThumbs ? "<th>缩略图</th>" : ""}
+            <th>卷</th>
+            <th>片段</th>
+            <th>风险等级</th>
+            <th>分值</th>
+            <th>颜色偏移</th>
+            <th>破损情况</th>
+            <th>位置</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${stats.abnormalSegments.map(seg => `
+            <tr>
+              ${includeThumbs ? `<td>${seg.thumb ? `<img src="${seg.thumb}" class="report-thumb" />` : '<div class="report-thumb-placeholder">—</div>'}</td>` : ""}
+              <td>第${seg.reelIndex + 1}卷</td>
+              <td><strong>${escapeHtml(seg.code)}</strong></td>
+              <td><span class="risk-badge ${seg.risk.css}">${seg.risk.label}</span></td>
+              <td><strong>${seg.risk.score}</strong></td>
+              <td>${escapeHtml(seg.shift)}</td>
+              <td>${escapeHtml(seg.damage)}</td>
+              <td>${formatDuration(seg.absoluteStart)} - ${formatDuration(seg.absoluteEnd)}</td>
+              <td>${escapeHtml(seg.note || "")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
+}
+
+function buildGlobalReportChecklist(stats) {
+  if (stats.reels.length === 0) return "";
+  return `
+    <section class="report-section">
+      <h2>检查单完成进度</h2>
+      <div class="report-checklist-overview">
+        <div class="report-checklist-progress-bar">
+          <div class="report-checklist-progress-fill" style="width:${stats.checklistRate}%"></div>
+        </div>
+        <p><strong>${stats.checklistCompleted} / ${stats.checklistTotal}</strong> 项已完成（${stats.checklistRate}%）</p>
+      </div>
+      ${stats.reels.map(reel => {
+        const items = Array.isArray(reel.checklist) ? reel.checklist : [];
+        if (items.length === 0) return "";
+        const done = items.filter(i => i.completed).length;
+        const rate = Math.round((done / items.length) * 100);
+        return `
+          <div class="report-checklist-reel-section">
+            <h3>${escapeHtml(reel.title)} <span class="report-checklist-reel-rate">${done}/${items.length} (${rate}%)</span></h3>
+            <ul class="report-checklist-ul">
+              ${items.map(item => `
+                <li class="${item.completed ? "checked" : ""} priority-${item.priority || "normal"}">
+                  <span class="report-checklist-box">${item.completed ? "✓" : ""}</span>
+                  <span>${escapeHtml(item.text)}</span>
+                  <span class="report-checklist-src">${item.source === "auto" ? "自动" : "手动"}</span>
+                </li>
+              `).join("")}
+            </ul>
+          </div>
+        `;
+      }).join("")}
+    </section>
+  `;
+}
+
+function buildGlobalReportFooter(stats) {
+  const now = new Date();
+  return `
+    <footer class="report-footer">
+      <p>本报告由 胶片分镜条核对台 · 全局排片视图 生成</p>
+      <p>生成时间：${now.toLocaleString("zh-CN")} · 共 ${stats.reelCount} 卷 · ${stats.totalSegments} 段 · ${formatDuration(stats.totalDuration)}</p>
+    </footer>
+  `;
+}
+
+function generateGlobalReportHtml(config) {
+  const stats = computeGlobalScheduleStats();
+
+  if (stats.reelCount === 0) {
+    return `
+      <!DOCTYPE html>
+      <html lang="zh-CN"><head><meta charset="UTF-8"><title>联合试映报告</title><link rel="stylesheet" href="styles.css" /></head>
+      <body class="report-window-body">
+        <div class="report-toolbar">
+          <button type="button" onclick="window.close()" style="background:#fffdf7">关闭</button>
+        </div>
+        <p style="padding:60px;text-align:center;color:#b54d48;font-size:18px">尚未选择任何胶片卷加入排片。请先在全局排片中选入胶片卷。</p>
+      </body></html>
+    `;
+  }
+
+  const cfg = Object.assign({
+    cover: true,
+    summary: true,
+    segments: true,
+    abnormal: true,
+    checklist: true,
+    thumbs: true
+  }, config || {});
+  if (typeof cfg.includeCover === "boolean") cfg.cover = cfg.includeCover;
+  if (typeof cfg.includeReelOrder === "boolean") cfg.summary = cfg.includeReelOrder;
+  if (typeof cfg.includeSegments === "boolean") cfg.segments = cfg.includeSegments;
+  if (typeof cfg.includeAbnormal === "boolean") cfg.abnormal = cfg.includeAbnormal;
+  if (typeof cfg.includeChecklist === "boolean") cfg.checklist = cfg.includeChecklist;
+  if (typeof cfg.includeThumbs === "boolean") cfg.thumbs = cfg.includeThumbs;
+
+  const coverHtml = cfg.cover ? buildGlobalReportCover(stats) : "";
+  const orderHtml = cfg.summary ? buildGlobalReportReelOrder(stats) : "";
+  const segmentsHtml = cfg.segments ? buildGlobalReportSegmentsTable(stats, cfg.thumbs) : "";
+  const abnormalHtml = cfg.abnormal ? buildGlobalReportAbnormal(stats, cfg.thumbs) : "";
+  const checklistHtml = cfg.checklist ? buildGlobalReportChecklist(stats) : "";
+  const footerHtml = buildGlobalReportFooter(stats);
+
+  return `
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="UTF-8" />
+      <title>联合试映报告 - ${stats.reelCount}卷 · ${formatDuration(stats.totalDuration)}</title>
+      <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body class="report-window-body">
+      <div class="report-toolbar">
+        <button type="button" onclick="window.print()" style="background:#1f2428;color:#fff;border-color:#1f2428;font-weight:700">🖨️ 打印报告</button>
+        <button type="button" onclick="window.close()" style="background:#fffdf7">关闭</button>
+      </div>
+      <div class="report-container">
+        ${coverHtml}
+        ${orderHtml}
+        ${segmentsHtml}
+        ${abnormalHtml}
+        ${checklistHtml}
+        ${footerHtml}
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function openGlobalReportWindow() {
+  const stats = computeGlobalScheduleStats();
+  if (stats.reelCount === 0) {
+    alert("请先选择至少一个胶片卷加入排片。");
+    return;
+  }
+
+  const reportHtml = generateGlobalReportHtml();
+  const reportWindow = window.open("", "_blank", "width=1050,height=1250,resizable=yes,scrollbars=yes,menubar=yes,toolbar=yes");
+
+  if (!reportWindow) {
+    alert("无法打开报告窗口，请检查浏览器的弹窗拦截设置。");
+    return;
+  }
+
+  reportWindow.document.open();
+  reportWindow.document.write(reportHtml);
+  reportWindow.document.close();
+
+  const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf("/") + 1);
+  const baseTag = reportWindow.document.createElement("base");
+  baseTag.href = baseUrl;
+  reportWindow.document.head.appendChild(baseTag);
+}
+
+els.globalScheduleBtn.addEventListener("click", openGlobalScheduleModal);
+els.globalScheduleClose.addEventListener("click", closeGlobalScheduleModal);
+els.globalScheduleBackdrop.addEventListener("click", closeGlobalScheduleModal);
+els.globalScheduleClearBtn.addEventListener("click", clearGlobalSchedule);
+els.globalScheduleReportBtn.addEventListener("click", openGlobalReportWindow);
+
+loadGlobalScheduleState();
 
 renderAll();
