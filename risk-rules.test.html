@@ -1,0 +1,1237 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>风险评分规则 - 本地测试</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        margin: 0;
+        padding: 24px;
+        background: #1e1e2e;
+        color: #cdd6f4;
+        line-height: 1.5;
+      }
+      h1 { margin: 0 0 8px; font-size: 22px; color: #89b4fa; }
+      .subtitle { color: #a6adc8; margin-bottom: 20px; font-size: 13px; }
+      .summary {
+        display: flex;
+        gap: 16px;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+      }
+      .summary-card {
+        background: #313244;
+        padding: 12px 18px;
+        border-radius: 8px;
+        min-width: 120px;
+      }
+      .summary-card .num { font-size: 24px; font-weight: 700; }
+      .summary-card .label { font-size: 12px; color: #a6adc8; }
+      .card-pass .num { color: #a6e3a1; }
+      .card-fail .num { color: #f38ba8; }
+      .card-total .num { color: #89b4fa; }
+      .toolbar {
+        margin-bottom: 16px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #45475a;
+        color: #cdd6f4;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      button:hover { background: #585b70; }
+      button.primary { background: #89b4fa; color: #1e1e2e; font-weight: 600; }
+      button.primary:hover { background: #b4befe; }
+      details {
+        background: #313244;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        overflow: hidden;
+      }
+      summary {
+        padding: 12px 16px;
+        cursor: pointer;
+        font-weight: 600;
+        user-select: none;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      summary:hover { background: #45475a; }
+      .suite-header-meta {
+        font-size: 12px;
+        font-weight: 400;
+        display: flex;
+        gap: 12px;
+      }
+      .suite-pass { color: #a6e3a1; }
+      .suite-fail { color: #f38ba8; }
+      .tests { padding: 4px 16px 12px; }
+      .test-item {
+        padding: 8px 12px;
+        border-radius: 6px;
+        margin-bottom: 4px;
+        font-size: 13px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .test-pass {
+        background: rgba(166, 227, 161, 0.08);
+        border-left: 3px solid #a6e3a1;
+      }
+      .test-fail {
+        background: rgba(243, 139, 168, 0.08);
+        border-left: 3px solid #f38ba8;
+      }
+      .test-name { font-weight: 500; }
+      .test-pass .test-name { color: #a6e3a1; }
+      .test-fail .test-name { color: #f38ba8; }
+      .error-msg {
+        margin-top: 6px;
+        padding: 8px 12px;
+        background: rgba(243, 139, 168, 0.12);
+        border-radius: 4px;
+        color: #f38ba8;
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+      .hint {
+        background: #313244;
+        border-left: 3px solid #f9e2af;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 20px;
+        font-size: 13px;
+        color: #f9e2af;
+      }
+      .hint code {
+        background: #45475a;
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #f5e0dc;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🎞️ 风险评分规则 — 本地测试运行器</h1>
+    <p class="subtitle">无需任何构建工具或 npm 依赖，直接在浏览器中打开此文件即可运行测试</p>
+
+    <div class="hint">
+      <strong>运行方式：</strong>直接双击 <code>risk-rules.test.html</code> 用浏览器打开，或
+      在项目目录执行 <code>python3 -m http.server 8000</code> 后访问
+      <code>http://localhost:8000/risk-rules.test.html</code>。测试使用独立的
+      localStorage 命名空间，不会污染真实应用数据。
+    </div>
+
+    <div class="summary">
+      <div class="summary-card card-total">
+        <div class="num" id="totalCount">—</div>
+        <div class="label">总用例</div>
+      </div>
+      <div class="summary-card card-pass">
+        <div class="num" id="passCount">—</div>
+        <div class="label">通过</div>
+      </div>
+      <div class="summary-card card-fail">
+        <div class="num" id="failCount">—</div>
+        <div class="label">失败</div>
+      </div>
+      <div class="summary-card">
+        <div class="num" id="duration">—</div>
+        <div class="label">耗时 (ms)</div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="primary" id="runBtn">▶ 重新运行全部测试</button>
+      <button id="expandBtn">展开全部</button>
+      <button id="collapseBtn">折叠全部</button>
+      <button id="showFailBtn">仅显示失败</button>
+      <button id="consoleBtn">在控制台查看详情</button>
+    </div>
+
+    <div id="report"></div>
+
+    <script src="risk-rules.js"></script>
+    <script>
+    // ============================================================
+    //  轻量测试框架（零依赖）
+    // ============================================================
+    (function () {
+      const suites = [];
+      let currentSuite = null;
+      const TEST_PREFIX = "__test__";
+
+      function describe(name, fn) {
+        const suite = { name, tests: [], beforeFns: [], afterFns: [] };
+        suites.push(suite);
+        currentSuite = suite;
+        fn();
+        currentSuite = null;
+      }
+
+      function beforeEach(fn) {
+        if (currentSuite) currentSuite.beforeFns.push(fn);
+      }
+
+      function afterEach(fn) {
+        if (currentSuite) currentSuite.afterFns.push(fn);
+      }
+
+      function it(name, fn) {
+        if (currentSuite) currentSuite.tests.push({ name, fn });
+      }
+
+      function deepEqual(a, b) {
+        if (a === b) return true;
+        if (typeof a !== typeof b) return false;
+        if (a === null || b === null) return a === b;
+        if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+        if (a instanceof RegExp && b instanceof RegExp) return a.source === b.source && a.flags === b.flags;
+        if (typeof a !== "object") return false;
+        if (Array.isArray(a) !== Array.isArray(b)) return false;
+        const keysA = Object.keys(a);
+        const keysB = Object.keys(b);
+        if (keysA.length !== keysB.length) return false;
+        for (const k of keysA) {
+          if (!keysB.includes(k)) return false;
+          if (!deepEqual(a[k], b[k])) return false;
+        }
+        return true;
+      }
+
+      function formatValue(v) {
+        if (v === undefined) return "undefined";
+        if (v === null) return "null";
+        if (typeof v === "string") return JSON.stringify(v);
+        if (typeof v === "number" || typeof v === "boolean") return String(v);
+        if (v instanceof RegExp) return v.toString();
+        try {
+          return JSON.stringify(v, null, 2);
+        } catch (e) {
+          return String(v);
+        }
+      }
+
+      const assert = {
+        equal(actual, expected, msg) {
+          if (actual !== expected) {
+            throw new Error(
+              (msg || "equal 断言失败") +
+              `\n  期望值: ${formatValue(expected)}\n  实际值: ${formatValue(actual)}`
+            );
+          }
+        },
+        notEqual(actual, expected, msg) {
+          if (actual === expected) {
+            throw new Error(
+              (msg || "notEqual 断言失败") +
+              `\n  期望值不等于: ${formatValue(expected)}\n  实际值: ${formatValue(actual)}`
+            );
+          }
+        },
+        deepEqual(actual, expected, msg) {
+          if (!deepEqual(actual, expected)) {
+            throw new Error(
+              (msg || "deepEqual 断言失败") +
+              `\n  期望值: ${formatValue(expected)}\n  实际值: ${formatValue(actual)}`
+            );
+          }
+        },
+        true(val, msg) {
+          if (val !== true) {
+            throw new Error((msg || "true 断言失败") + `\n  实际值: ${formatValue(val)}`);
+          }
+        },
+        false(val, msg) {
+          if (val !== false) {
+            throw new Error((msg || "false 断言失败") + `\n  实际值: ${formatValue(val)}`);
+          }
+        },
+        ok(val, msg) {
+          if (!val) {
+            throw new Error((msg || "ok 断言失败") + `\n  实际值: ${formatValue(val)}`);
+          }
+        },
+        throws(fn, msg) {
+          let thrown = false;
+          try { fn(); } catch (e) { thrown = true; }
+          if (!thrown) throw new Error(msg || "throws 断言失败：函数未抛出异常");
+        },
+        includes(arrOrStr, item, msg) {
+          const found = typeof arrOrStr === "string" ? arrOrStr.includes(item) : arrOrStr.indexOf(item) !== -1;
+          if (!found) {
+            throw new Error(
+              (msg || "includes 断言失败") +
+              `\n  未找到: ${formatValue(item)}\n  容器: ${formatValue(arrOrStr)}`
+            );
+          }
+        },
+        arrayIncludes(arr, predicate, msg) {
+          if (!arr.some(predicate)) {
+            throw new Error((msg || "arrayIncludes 断言失败") + `\n  数组: ${formatValue(arr)}`);
+          }
+        },
+        length(arr, n, msg) {
+          if (arr.length !== n) {
+            throw new Error(
+              (msg || "length 断言失败") +
+              `\n  期望长度: ${n}\n  实际长度: ${arr.length}`
+            );
+          }
+        }
+      };
+
+      window.describe = describe;
+      window.it = it;
+      window.beforeEach = beforeEach;
+      window.afterEach = afterEach;
+      window.assert = assert;
+      window.__TEST_SUITES__ = suites;
+    })();
+
+    // ============================================================
+    //  localStorage 隔离 —— 不污染真实应用数据
+    // ============================================================
+    (function () {
+      const TEST_PREFIX = "__test_zfl17_";
+      const origGetItem = localStorage.getItem.bind(localStorage);
+      const origSetItem = localStorage.setItem.bind(localStorage);
+      const origRemoveItem = localStorage.removeItem.bind(localStorage);
+      const origClear = localStorage.clear.bind(localStorage);
+
+      function testKey(k) {
+        if (k === "zfl17-risk-rules") return TEST_PREFIX + k;
+        return k;
+      }
+
+      localStorage.getItem = function (k) { return origGetItem(testKey(k)); };
+      localStorage.setItem = function (k, v) { return origSetItem(testKey(k), v); };
+      localStorage.removeItem = function (k) { return origRemoveItem(testKey(k)); };
+      localStorage.clear = function () {
+        const toRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith(TEST_PREFIX)) toRemove.push(k);
+        }
+        toRemove.forEach(k => origRemoveItem(k));
+      };
+
+      window.__resetTestStorage = function () {
+        localStorage.clear();
+        window.currentRiskRules = null;
+      };
+    })();
+
+    // ============================================================
+    //  测试用例
+    // ============================================================
+
+    // ---------- 1. 默认规则初始化 ----------
+    describe("默认风险规则", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      it("默认颜色偏移规则完整且分值正确", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.deepEqual(rules.shift, {
+          "正常": 0,
+          "偏红": 2,
+          "偏青": 2,
+          "偏黄": 1,
+          "褪色": 3
+        });
+      });
+
+      it("默认破损类型规则完整且分值正确", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.deepEqual(rules.damage, {
+          "完好": 0,
+          "轻微划痕": 2,
+          "齿孔破损": 3,
+          "接片松动": 2,
+          "需跳过": 4
+        });
+      });
+
+      it("默认短片段阈值：5秒内2分，6-10秒1分", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.equal(rules.duration.thresholds.length, 2);
+        assert.equal(rules.duration.thresholds[0].max, 5);
+        assert.equal(rules.duration.thresholds[0].score, 2);
+        assert.equal(rules.duration.thresholds[1].max, 10);
+        assert.equal(rules.duration.thresholds[1].score, 1);
+      });
+
+      it("默认备注关键词包含跳过/破损/留意/修复/松动五类", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.equal(rules.noteKeywords.length, 5);
+        const patterns = rules.noteKeywords.map(k => k.pattern);
+        assert.includes(patterns, "跳过|需跳过");
+        assert.includes(patterns, "破损|断裂");
+        assert.includes(patterns, "留意|注意|小心");
+        assert.includes(patterns, "重新|重做|修复");
+        assert.includes(patterns, "松动|脱落");
+      });
+
+      it("默认风险等级：安全(0)/低风险(3)/中风险(6)/高风险(∞)", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.equal(rules.levels.length, 4);
+        assert.equal(rules.levels[0].max, 0);
+        assert.equal(rules.levels[0].label, "安全");
+        assert.equal(rules.levels[1].max, 3);
+        assert.equal(rules.levels[1].label, "低风险");
+        assert.equal(rules.levels[2].max, 6);
+        assert.equal(rules.levels[2].label, "中风险");
+        assert.equal(rules.levels[3].max, "Infinity");
+        assert.equal(rules.levels[3].label, "高风险");
+      });
+
+      it("计算规则已将 noteKeywords 编译为正则表达式", function () {
+        const calcRules = window.getCurrentRiskRulesForCalculation();
+        calcRules.noteKeywords.forEach(kw => {
+          assert.true(kw.pattern instanceof RegExp,
+            `关键词 "${kw.reason}" 的 pattern 应该是 RegExp`);
+        });
+      });
+    });
+
+    // ---------- 2. 颜色偏移评分 ----------
+    describe("颜色偏移评分（默认规则）", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      function mkSegment(shift) {
+        return { code: "T-01", duration: 30, shift, damage: "完好", note: "" };
+      }
+
+      it("正常：0分，安全等级", function () {
+        const r = window.calculateSegmentRisk(mkSegment("正常"));
+        assert.equal(r.score, 0);
+        assert.equal(r.label, "安全");
+        assert.equal(r.css, "risk-safe");
+        assert.equal(r.reasons.length, 0);
+      });
+
+      it("偏黄：1分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("偏黄"));
+        assert.equal(r.score, 1);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '颜色偏移「偏黄」(+1)');
+      });
+
+      it("偏红：2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("偏红"));
+        assert.equal(r.score, 2);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '颜色偏移「偏红」(+2)');
+      });
+
+      it("偏青：2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("偏青"));
+        assert.equal(r.score, 2);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '颜色偏移「偏青」(+2)');
+      });
+
+      it("褪色：3分，低风险（边界值）", function () {
+        const r = window.calculateSegmentRisk(mkSegment("褪色"));
+        assert.equal(r.score, 3);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '颜色偏移「褪色」(+3)');
+      });
+
+      it("未知颜色偏移类型：视为0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment("不存在的类型"));
+        assert.equal(r.score, 0);
+        assert.equal(r.label, "安全");
+      });
+
+      it("shift 为空字符串：视为0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment(""));
+        assert.equal(r.score, 0);
+      });
+    });
+
+    // ---------- 3. 破损类型评分 ----------
+    describe("破损类型评分（默认规则）", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      function mkSegment(damage) {
+        return { code: "T-02", duration: 30, shift: "正常", damage, note: "" };
+      }
+
+      it("完好：0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment("完好"));
+        assert.equal(r.score, 0);
+        assert.equal(r.label, "安全");
+      });
+
+      it("轻微划痕：2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("轻微划痕"));
+        assert.equal(r.score, 2);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '破损「轻微划痕」(+2)');
+      });
+
+      it("接片松动：2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("接片松动"));
+        assert.equal(r.score, 2);
+        assert.equal(r.label, "低风险");
+      });
+
+      it("齿孔破损：3分，低风险（边界）", function () {
+        const r = window.calculateSegmentRisk(mkSegment("齿孔破损"));
+        assert.equal(r.score, 3);
+        assert.equal(r.label, "低风险");
+        assert.includes(r.reasons, '破损「齿孔破损」(+3)');
+      });
+
+      it("需跳过：4分，中风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("需跳过"));
+        assert.equal(r.score, 4);
+        assert.equal(r.label, "中风险");
+        assert.includes(r.reasons, '破损「需跳过」(+4)');
+      });
+
+      it("未知破损类型：0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment("未知损坏"));
+        assert.equal(r.score, 0);
+      });
+    });
+
+    // ---------- 4. 短片段阈值 ----------
+    describe("短片段阈值评分（默认规则）", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      function mkSegment(duration) {
+        return { code: "T-03", duration, shift: "正常", damage: "完好", note: "" };
+      }
+
+      it("1秒：极短片段 +2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment(1));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "极短片段（≤5秒）(+2)");
+      });
+
+      it("5秒：边界，命中极短阈值 +2分", function () {
+        const r = window.calculateSegmentRisk(mkSegment(5));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "极短片段（≤5秒）(+2)");
+      });
+
+      it("6秒：刚超过极短，命中较短阈值 +1分", function () {
+        const r = window.calculateSegmentRisk(mkSegment(6));
+        assert.equal(r.score, 1);
+        assert.includes(r.reasons, "较短片段（6-10秒）(+1)");
+      });
+
+      it("10秒：边界，命中较短阈值 +1分", function () {
+        const r = window.calculateSegmentRisk(mkSegment(10));
+        assert.equal(r.score, 1);
+        assert.includes(r.reasons, "较短片段（6-10秒）(+1)");
+      });
+
+      it("11秒：超过所有阈值，0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment(11));
+        assert.equal(r.score, 0);
+        assert.equal(r.label, "安全");
+      });
+
+      it("30秒：常规时长不触发短片段扣分", function () {
+        const r = window.calculateSegmentRisk(mkSegment(30));
+        assert.equal(r.score, 0);
+      });
+
+      it("时长为字符串数字：能正确解析并匹配阈值", function () {
+        const r = window.calculateSegmentRisk({ ...mkSegment("5") });
+        assert.equal(r.score, 2);
+      });
+
+      it("时长为0：Number(0)||0 回退为 0，仍命中 ≤5 阈值 +2 分", function () {
+        const r = window.calculateSegmentRisk(mkSegment(0));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "极短片段（≤5秒）(+2)");
+      });
+
+      it("时长为非数字字符串：回退为 0，命中 ≤5 阈值 +2 分", function () {
+        const r = window.calculateSegmentRisk({ ...mkSegment("abc") });
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "极短片段（≤5秒）(+2)");
+      });
+
+      it("阈值按从小到大匹配，先匹配到的生效", function () {
+        const r5 = window.calculateSegmentRisk(mkSegment(5));
+        assert.equal(r5.score, 2);
+        const r6 = window.calculateSegmentRisk(mkSegment(6));
+        assert.equal(r6.score, 1);
+      });
+    });
+
+    // ---------- 5. 备注关键词叠加 ----------
+    describe("备注关键词叠加评分（默认规则）", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      function mkSegment(note) {
+        return { code: "T-04", duration: 30, shift: "正常", damage: "完好", note };
+      }
+
+      it("空备注：0分，安全", function () {
+        const r = window.calculateSegmentRisk(mkSegment(""));
+        assert.equal(r.score, 0);
+        assert.equal(r.reasons.length, 0);
+      });
+
+      it("命中跳过关键词：+3分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("此片段需跳过"));
+        assert.equal(r.score, 3);
+        assert.includes(r.reasons, "备注含跳过提示(+3)");
+      });
+
+      it("命中破损关键词：+2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("胶片有断裂"));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "备注含破损描述(+2)");
+      });
+
+      it("命中留意关键词：+1分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("注意画面抖动"));
+        assert.equal(r.score, 1);
+        assert.includes(r.reasons, "备注含留意提醒(+1)");
+      });
+
+      it("命中修复关键词：+2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("需要重做接片"));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "备注含修复需求(+2)");
+      });
+
+      it("命中松动关键词：+2分，低风险", function () {
+        const r = window.calculateSegmentRisk(mkSegment("齿孔脱落"));
+        assert.equal(r.score, 2);
+        assert.includes(r.reasons, "备注含松动描述(+2)");
+      });
+
+      it("命中两个关键词：分值累加，原因两条", function () {
+        const r = window.calculateSegmentRisk(mkSegment("需跳过，注意声音"));
+        assert.equal(r.score, 3 + 1);
+        assert.equal(r.reasons.length, 2);
+        assert.includes(r.reasons, "备注含跳过提示(+3)");
+        assert.includes(r.reasons, "备注含留意提醒(+1)");
+      });
+
+      it("命中全部五个关键词：分值全累加", function () {
+        const r = window.calculateSegmentRisk(
+          mkSegment("需跳过，齿孔破损，注意画面，重做接片，接头松动")
+        );
+        assert.equal(r.score, 3 + 2 + 1 + 2 + 2);
+        assert.equal(r.reasons.length, 5);
+      });
+
+      it("同一关键词多次出现：只匹配一次，不累加多次", function () {
+        const r = window.calculateSegmentRisk(mkSegment("跳过跳过跳过"));
+        assert.equal(r.score, 3);
+        assert.equal(r.reasons.length, 1);
+      });
+
+      it("关键词正则大小写不敏感？实际是敏感的（默认不设i），中文无影响", function () {
+        const r = window.calculateSegmentRisk(mkSegment("SKIP"));
+        assert.equal(r.score, 0);
+      });
+
+      it("note 为 undefined：安全，不报错", function () {
+        const r = window.calculateSegmentRisk({ code: "T-04x", duration: 30, shift: "正常", damage: "完好" });
+        assert.equal(r.score, 0);
+      });
+    });
+
+    // ---------- 6. 风险等级边界 ----------
+    describe("风险等级边界（默认等级划分）", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      function mkSegmentWithDamage(damageName) {
+        return { code: "T-B", duration: 30, shift: "正常", damage: damageName, note: "" };
+      }
+
+      function scoreByNote(noteScore) {
+        const noteMap = {
+          0: "",
+          1: "留意",
+          3: "需跳过",
+          4: "需跳过，留意",
+          6: "需跳过，破损，留意",
+          7: "需跳过，破损，修复",
+          10: "需跳过，破损，留意，修复，松动"
+        };
+        return window.calculateSegmentRisk({
+          code: "T-B2", duration: 30, shift: "正常", damage: "完好", note: noteMap[noteScore] ?? ""
+        });
+      }
+
+      it("0分：安全", function () {
+        const r = scoreByNote(0);
+        assert.equal(r.score, 0);
+        assert.equal(r.label, "安全");
+        assert.equal(r.css, "risk-safe");
+      });
+
+      it("1分：低风险", function () {
+        const r = scoreByNote(1);
+        assert.equal(r.score, 1);
+        assert.equal(r.label, "低风险");
+        assert.equal(r.css, "risk-low");
+      });
+
+      it("3分：低风险（上边界）", function () {
+        const r = scoreByNote(3);
+        assert.equal(r.score, 3);
+        assert.equal(r.label, "低风险");
+        assert.equal(r.css, "risk-low");
+      });
+
+      it("4分：中风险（下边界）", function () {
+        const r = scoreByNote(4);
+        assert.equal(r.score, 4);
+        assert.equal(r.label, "中风险");
+        assert.equal(r.css, "risk-medium");
+      });
+
+      it("6分：中风险（上边界）", function () {
+        const r = scoreByNote(6);
+        assert.equal(r.score, 6);
+        assert.equal(r.label, "中风险");
+        assert.equal(r.css, "risk-medium");
+      });
+
+      it("7分：高风险（下边界）", function () {
+        const r = scoreByNote(7);
+        assert.equal(r.score, 7);
+        assert.equal(r.label, "高风险");
+        assert.equal(r.css, "risk-high");
+      });
+
+      it("10分：高风险（高分值仍为高风险）", function () {
+        const r = scoreByNote(10);
+        assert.equal(r.score, 10);
+        assert.equal(r.label, "高风险");
+        assert.equal(r.css, "risk-high");
+      });
+
+      it("综合叠加：褪色(3) + 齿孔破损(3) + 短片段5秒(2) = 8分 → 高风险", function () {
+        const r = window.calculateSegmentRisk({
+          code: "T-B3", duration: 5, shift: "褪色", damage: "齿孔破损", note: ""
+        });
+        assert.equal(r.score, 3 + 3 + 2);
+        assert.equal(r.label, "高风险");
+      });
+
+      it("综合叠加：偏黄(1) + 轻微划痕(2) + 注意(1) = 4分 → 中风险", function () {
+        const r = window.calculateSegmentRisk({
+          code: "T-B4", duration: 20, shift: "偏黄", damage: "轻微划痕", note: "注意画面"
+        });
+        assert.equal(r.score, 1 + 2 + 1);
+        assert.equal(r.label, "中风险");
+      });
+    });
+
+    // ---------- 7. 自定义规则：修改、验证、持久化、计算 ----------
+    describe("自定义规则 — 加载、修改、持久化、计算", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      afterEach(function () {
+        window.resetRiskRulesToDefault();
+      });
+
+      it("updateRiskRules 能修改颜色偏移分值并生效", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.shift["正常"] = 0;
+        custom.shift["偏红"] = 5;
+        custom.shift["偏青"] = 4;
+        custom.shift["偏黄"] = 2;
+        custom.shift["褪色"] = 6;
+
+        const result = window.updateRiskRules(custom);
+        assert.true(result.success, "规则保存应成功");
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C1", duration: 30, shift: "偏红", damage: "完好", note: ""
+        });
+        assert.equal(r.score, 5);
+        assert.includes(r.reasons, "颜色偏移「偏红」(+5)");
+      });
+
+      it("updateRiskRules 能修改破损类型分值并生效", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.damage["完好"] = 0;
+        custom.damage["轻微划痕"] = 1;
+        custom.damage["齿孔破损"] = 5;
+        custom.damage["接片松动"] = 3;
+        custom.damage["需跳过"] = 8;
+
+        const result = window.updateRiskRules(custom);
+        assert.true(result.success);
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C2", duration: 30, shift: "正常", damage: "需跳过", note: ""
+        });
+        assert.equal(r.score, 8);
+        assert.equal(r.label, "高风险");
+      });
+
+      it("updateRiskRules 能修改短片段阈值并按新值匹配", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.duration.thresholds = [
+          { max: 3, score: 5, reason: "超短(≤3s)" },
+          { max: 8, score: 2, reason: "较短(4-8s)" },
+          { max: 15, score: 1, reason: "稍短(9-15s)" }
+        ];
+
+        const result = window.updateRiskRules(custom);
+        assert.true(result.success);
+
+        const r1 = window.calculateSegmentRisk({ code: "T-C3", duration: 2, shift: "正常", damage: "完好", note: "" });
+        assert.equal(r1.score, 5);
+        assert.includes(r1.reasons, "超短(≤3s)(+5)");
+
+        const r2 = window.calculateSegmentRisk({ code: "T-C3b", duration: 6, shift: "正常", damage: "完好", note: "" });
+        assert.equal(r2.score, 2);
+
+        const r3 = window.calculateSegmentRisk({ code: "T-C3c", duration: 12, shift: "正常", damage: "完好", note: "" });
+        assert.equal(r3.score, 1);
+
+        const r4 = window.calculateSegmentRisk({ code: "T-C3d", duration: 20, shift: "正常", damage: "完好", note: "" });
+        assert.equal(r4.score, 0);
+      });
+
+      it("updateRiskRules 能新增备注关键词并参与评分", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.noteKeywords.push({
+          pattern: "发霉|霉斑|腐蚀",
+          score: 4,
+          reason: "备注含发霉描述"
+        });
+
+        const result = window.updateRiskRules(custom);
+        assert.true(result.success);
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C4", duration: 30, shift: "正常", damage: "完好", note: "片基有霉斑需处理"
+        });
+        assert.equal(r.score, 4);
+        assert.includes(r.reasons, "备注含发霉描述(+4)");
+      });
+
+      it("updateRiskRules 能修改风险等级划分边界并生效", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.levels = [
+          { max: 0, label: "安全", css: "risk-safe" },
+          { max: 2, label: "低风险", css: "risk-low" },
+          { max: 5, label: "中风险", css: "risk-medium" },
+          { max: "Infinity", label: "高风险", css: "risk-high" }
+        ];
+
+        const result = window.updateRiskRules(custom);
+        assert.true(result.success);
+
+        const rLow = window.calculateSegmentRisk({
+          code: "T-C5", duration: 30, shift: "偏黄", damage: "完好", note: ""
+        });
+        assert.equal(rLow.score, 1);
+        assert.equal(rLow.label, "低风险");
+
+        const rMed = window.calculateSegmentRisk({
+          code: "T-C5b", duration: 30, shift: "褪色", damage: "完好", note: ""
+        });
+        assert.equal(rMed.score, 3);
+        assert.equal(rMed.label, "中风险");
+
+        const rHigh = window.calculateSegmentRisk({
+          code: "T-C5c", duration: 30, shift: "正常", damage: "需跳过", note: ""
+        });
+        assert.equal(rHigh.score, 4);
+        assert.equal(rHigh.label, "中风险");
+      });
+
+      it("自定义规则持久化：保存后重新加载仍生效", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.shift["褪色"] = 9;
+
+        const saveRes = window.updateRiskRules(custom);
+        assert.true(saveRes.success);
+
+        window.currentRiskRules = null;
+        window.loadRiskRules();
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C6", duration: 30, shift: "褪色", damage: "完好", note: ""
+        });
+        assert.equal(r.score, 9);
+        assert.equal(r.label, "高风险");
+      });
+
+      it("resetRiskRulesToDefault 恢复默认规则", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.shift["偏红"] = 99;
+        window.updateRiskRules(custom);
+
+        window.resetRiskRulesToDefault();
+        const restored = window.getCurrentRiskRules();
+        assert.equal(restored.shift["偏红"], 2);
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C7", duration: 30, shift: "偏红", damage: "完好", note: ""
+        });
+        assert.equal(r.score, 2);
+      });
+
+      it("备份与恢复：getSerializedRulesForBackup / restoreRulesFromBackup 往返一致", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.shift["偏青"] = 7;
+        custom.damage["需跳过"] = 9;
+        window.updateRiskRules(custom);
+
+        const backup = window.getSerializedRulesForBackup();
+        assert.equal(backup.shift["偏青"], 7);
+        assert.equal(backup.damage["需跳过"], 9);
+
+        window.resetRiskRulesToDefault();
+        assert.equal(window.getCurrentRiskRules().shift["偏青"], 2);
+
+        const restoreRes = window.restoreRulesFromBackup(backup);
+        assert.true(restoreRes.success);
+        assert.equal(window.getCurrentRiskRules().shift["偏青"], 7);
+        assert.equal(window.getCurrentRiskRules().damage["需跳过"], 9);
+
+        const r = window.calculateSegmentRisk({
+          code: "T-C8", duration: 30, shift: "偏青", damage: "完好", note: ""
+        });
+        assert.equal(r.score, 7);
+        assert.equal(r.label, "高风险");
+      });
+    });
+
+    // ---------- 8. 规则校验 validateRiskRules ----------
+    describe("规则校验 validateRiskRules — 边界与错误", function () {
+      it("默认规则通过校验", function () {
+        const rules = window.getCurrentRiskRules();
+        const v = window.validateRiskRules(rules);
+        assert.true(v.valid, "默认规则应校验通过");
+        assert.equal(v.errors.length, 0);
+      });
+
+      it("颜色偏移分值为负数 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.shift["偏红"] = -1;
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("颜色偏移"));
+      });
+
+      it("破损类型分值非数字 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.damage["轻微划痕"] = "高";
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("破损类型"));
+      });
+
+      it("短片段阈值 max 为 0 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.duration.thresholds[0].max = 0;
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("时长阈值"));
+      });
+
+      it("短片段阈值缺少 reason → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.duration.thresholds[0].reason = "";
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("时长阈值"));
+      });
+
+      it("备注关键词正则表达式无效 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.noteKeywords[0].pattern = "[";
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("备注关键词"));
+      });
+
+      it("备注关键词分值为负数 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.noteKeywords[0].score = -2;
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+      });
+
+      it("备注关键词 pattern 为空字符串 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.noteKeywords[0].pattern = "";
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+      });
+
+      it("风险等级 max 为负数 → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.levels[0].max = -1;
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+        assert.arrayIncludes(v.errors, e => e.includes("风险等级"));
+      });
+
+      it("风险等级缺少 label → 校验失败", function () {
+        const rules = window.getCurrentRiskRules();
+        rules.levels[0].label = "";
+        const v = window.validateRiskRules(rules);
+        assert.false(v.valid);
+      });
+
+      it("updateRiskRules 在规则无效时返回错误且不保存", function () {
+        const base = window.getCurrentRiskRules();
+        const bad = JSON.parse(JSON.stringify(base));
+        bad.shift["偏红"] = -5;
+
+        const res = window.updateRiskRules(bad);
+        assert.false(res.success);
+        assert.ok(res.errors.length > 0);
+
+        const r = window.calculateSegmentRisk({
+          code: "T-V1", duration: 30, shift: "偏红", damage: "完好", note: ""
+        });
+        assert.equal(r.score, 2, "规则保存失败时不应修改当前规则");
+      });
+
+      it("restoreRulesFromBackup 对格式错误的备份返回失败", function () {
+        const res = window.restoreRulesFromBackup(null);
+        assert.false(res.success);
+        assert.arrayIncludes(res.errors, e => e.includes("格式无效"));
+      });
+    });
+
+    // ---------- 9. 序列化 / 反序列化往返 ----------
+    describe("序列化与反序列化往返", function () {
+      beforeEach(function () {
+        window.__resetTestStorage();
+        window.loadRiskRules();
+      });
+
+      afterEach(function () {
+        window.resetRiskRulesToDefault();
+      });
+
+      it("updateRiskRules → getSerializedRulesForBackup → restoreRulesFromBackup 往返一致", function () {
+        const base = window.getCurrentRiskRules();
+        const custom = JSON.parse(JSON.stringify(base));
+        custom.shift["褪色"] = 8;
+        custom.damage["齿孔破损"] = 6;
+        custom.noteKeywords.push({ pattern: "起泡|起皱", score: 3, reason: "备注含起泡描述" });
+        custom.levels = [
+          { max: 0, label: "安全", css: "risk-safe" },
+          { max: 4, label: "低风险", css: "risk-low" },
+          { max: 8, label: "中风险", css: "risk-medium" },
+          { max: "Infinity", label: "高风险", css: "risk-high" }
+        ];
+
+        const saveRes = window.updateRiskRules(custom);
+        assert.true(saveRes.success);
+
+        const rBefore = window.calculateSegmentRisk({
+          code: "T-S1", duration: 30, shift: "褪色", damage: "齿孔破损", note: "片基起泡"
+        });
+
+        const backup = window.getSerializedRulesForBackup();
+        assert.equal(typeof backup.noteKeywords[backup.noteKeywords.length - 1].pattern, "string",
+          "序列化后 pattern 应为字符串");
+        assert.equal(backup.levels[3].max, "Infinity",
+          "序列化后 Infinity 应转为字符串 'Infinity'");
+
+        window.resetRiskRulesToDefault();
+        const rReset = window.calculateSegmentRisk({
+          code: "T-S1b", duration: 30, shift: "褪色", damage: "齿孔破损", note: "片基起泡"
+        });
+        assert.notEqual(rReset.score, rBefore.score, "重置后分值应不同");
+
+        const restoreRes = window.restoreRulesFromBackup(backup);
+        assert.true(restoreRes.success);
+
+        const rAfter = window.calculateSegmentRisk({
+          code: "T-S1c", duration: 30, shift: "褪色", damage: "齿孔破损", note: "片基起泡"
+        });
+        assert.equal(rAfter.score, rBefore.score, "恢复后分值应与保存前一致");
+        assert.equal(rAfter.label, rBefore.label);
+        assert.deepEqual(rAfter.reasons, rBefore.reasons);
+      });
+
+      it("序列化输出 noteKeywords.pattern 为字符串，计算规则中 pattern 为 RegExp", function () {
+        const serialized = window.getCurrentRiskRules();
+        assert.equal(typeof serialized.noteKeywords[0].pattern, "string");
+
+        const calcRules = window.getCurrentRiskRulesForCalculation();
+        assert.true(calcRules.noteKeywords[0].pattern instanceof RegExp);
+      });
+
+      it("Infinity 在序列化后为字符串 'Infinity'，计算时恢复为数值 Infinity", function () {
+        const rules = window.getCurrentRiskRules();
+        assert.equal(rules.levels[3].max, "Infinity");
+        const calcRules = window.getCurrentRiskRulesForCalculation();
+        assert.equal(calcRules.levels[3].max, Infinity);
+      });
+    });
+
+    // ============================================================
+    //  测试运行器 & 报告渲染
+    // ============================================================
+    (function () {
+      function render() {
+        const suites = window.__TEST_SUITES__;
+        const reportEl = document.getElementById("report");
+        reportEl.innerHTML = "";
+
+        let totalPass = 0, totalFail = 0;
+        const startTs = performance.now();
+        const results = [];
+
+        for (const suite of suites) {
+          const suiteResult = { name: suite.name, tests: [], pass: 0, fail: 0 };
+          for (const test of suite.tests) {
+            try {
+              for (const bf of suite.beforeFns) bf();
+              test.fn();
+              for (const af of suite.afterFns) af();
+              suiteResult.tests.push({ name: test.name, pass: true });
+              suiteResult.pass++;
+              totalPass++;
+            } catch (e) {
+              for (const af of suite.afterFns) { try { af(); } catch (_) {} }
+              suiteResult.tests.push({ name: test.name, pass: false, error: e.message });
+              suiteResult.fail++;
+              totalFail++;
+            }
+          }
+          results.push(suiteResult);
+        }
+        const elapsed = performance.now() - startTs;
+
+        const total = totalPass + totalFail;
+        document.getElementById("totalCount").textContent = total;
+        document.getElementById("passCount").textContent = totalPass;
+        document.getElementById("failCount").textContent = totalFail;
+        document.getElementById("duration").textContent = elapsed.toFixed(0);
+
+        for (const sr of results) {
+          const details = document.createElement("details");
+          details.open = sr.fail > 0;
+          const allPass = sr.fail === 0;
+
+          const meta = document.createElement("span");
+          meta.className = "suite-header-meta";
+          meta.innerHTML = `<span class="${allPass ? "suite-pass" : "suite-fail"}">${sr.pass} 通过</span>` +
+            (sr.fail > 0 ? `<span class="suite-fail">${sr.fail} 失败</span>` : "");
+
+          const summary = document.createElement("summary");
+          summary.innerHTML = `<span>${sr.name}</span>`;
+          summary.appendChild(meta);
+          details.appendChild(summary);
+
+          const testsDiv = document.createElement("div");
+          testsDiv.className = "tests";
+          for (const t of sr.tests) {
+            const el = document.createElement("div");
+            el.className = "test-item " + (t.pass ? "test-pass" : "test-fail");
+            el.dataset.pass = t.pass;
+            const name = document.createElement("div");
+            name.className = "test-name";
+            name.textContent = (t.pass ? "✓ " : "✗ ") + t.name;
+            el.appendChild(name);
+            if (!t.pass) {
+              const err = document.createElement("div");
+              err.className = "error-msg";
+              err.textContent = t.error;
+              el.appendChild(err);
+            }
+            testsDiv.appendChild(el);
+          }
+          details.appendChild(testsDiv);
+          reportEl.appendChild(details);
+        }
+
+        console.log(`===== 风险规则测试结果：${totalPass}/${total} 通过，${totalFail} 失败，耗时 ${elapsed.toFixed(0)}ms =====`);
+        if (totalFail > 0) {
+          console.groupCollapsed("失败用例详情");
+          for (const sr of results) {
+            for (const t of sr.tests) {
+              if (!t.pass) {
+                console.log(`[${sr.name}] ${t.name}`);
+                console.log("  " + t.error);
+              }
+            }
+          }
+          console.groupEnd();
+        }
+      }
+
+      document.getElementById("runBtn").addEventListener("click", render);
+      document.getElementById("expandBtn").addEventListener("click", function () {
+        document.querySelectorAll("#report details").forEach(d => d.open = true);
+      });
+      document.getElementById("collapseBtn").addEventListener("click", function () {
+        document.querySelectorAll("#report details").forEach(d => d.open = false);
+      });
+      document.getElementById("showFailBtn").addEventListener("click", function () {
+        const btn = this;
+        const onlyFail = btn.dataset.on !== "1";
+        btn.dataset.on = onlyFail ? "1" : "0";
+        btn.textContent = onlyFail ? "显示全部" : "仅显示失败";
+        document.querySelectorAll("#report details").forEach(d => {
+          const hasFail = d.querySelector(".test-fail");
+          d.style.display = onlyFail && !hasFail ? "none" : "";
+          if (onlyFail && hasFail) d.open = true;
+        });
+      });
+      document.getElementById("consoleBtn").addEventListener("click", function () {
+        alert("请打开浏览器开发者工具（F12 / Cmd+Option+I）查看 Console 面板的详细输出。" +
+              "失败用例已分组折叠展示。");
+      });
+
+      window.addEventListener("load", render);
+    })();
+    </script>
+  </body>
+</html>
